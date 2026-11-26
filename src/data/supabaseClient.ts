@@ -64,7 +64,9 @@ export function createSupabaseDataClient(): DataClient {
         // Mostra a mensagem enviada pela função (ex.: "Créditos da CNPJá esgotados") em vez do erro genérico.
         const ctx = (error as { context?: Response }).context;
         const detail = ctx && typeof ctx.json === 'function' ? await ctx.json().catch(() => null) : null;
-        throw new Error((detail as { error?: string } | null)?.error ?? error.message);
+        if ((detail as { error?: string } | null)?.error) throw new Error((detail as { error: string }).error);
+        if (error.name === 'FunctionsFetchError') throw new Error('Não foi possível falar com o servidor. Verifique a internet e tente de novo; se continuar, atualize a página.');
+        throw new Error(error.message);
       }
       return data as T;
     },
