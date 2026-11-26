@@ -12,6 +12,8 @@ import { normalizeCnpjaOffice, type CnpjData } from '../../../supabase/functions
 export type { CnpjData };
 export { normalizeCnpjaOffice };
 
+export type CnpjPurpose = 'customer' | 'company' | 'partner' | 'supplier';
+
 export const CNPJ_SOURCE = 'BrasilAPI (dados públicos da Receita Federal)';
 
 export interface CnpjLookup {
@@ -53,7 +55,7 @@ export async function lookupCnpjBrasilApi(cnpj: string, fetcher: typeof fetch = 
 }
 
 /** Consulta o CNPJ pela melhor fonte disponível no modo atual. */
-export async function lookupCompany(cnpj: string, opts: { purpose?: 'customer' | 'company'; refresh?: boolean } = {}): Promise<CnpjLookup> {
+export async function lookupCompany(cnpj: string, opts: { purpose?: CnpjPurpose; refresh?: boolean } = {}): Promise<CnpjLookup> {
   if (db().mode === 'supabase') {
     return db().invoke<CnpjLookup>('cnpj-lookup', { cnpj: normalizeCnpj(cnpj), purpose: opts.purpose ?? 'customer', refresh: opts.refresh === true });
   }

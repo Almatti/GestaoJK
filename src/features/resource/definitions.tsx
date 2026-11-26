@@ -4,6 +4,14 @@ import { EQUIPMENT_STATUS } from '@/domain/equipment';
 import { formatReais } from '@/domain/money';
 import { formatDateBR } from '@/domain/dates';
 import type { ResourceDef, StatusMap } from './types';
+import { isValidCnpj, isValidCpf } from '@/domain/documents';
+
+/** CPF ou CNPJ opcional, validado pelos dígitos verificadores. */
+const validDocument = (v: unknown): string | null => {
+  const d = String(v ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+  if (!d) return null;
+  return isValidCnpj(d) || isValidCpf(d) ? null : 'CPF/CNPJ inválido';
+};
 
 export const opts = (rec: Record<string, string>) => Object.entries(rec).map(([value, label]) => ({ value, label }));
 const status = (column: string, map: Record<string, [string, Tone]>): StatusMap => ({ column, map: Object.fromEntries(Object.entries(map).map(([k, [label, tone]]) => [k, { label, tone }])) });
@@ -101,11 +109,15 @@ export const suppliersDef: ResourceDef = {
   fields: [
     { name: 'name', label: 'Razão social / nome', type: 'text', required: true, wide: true },
     { name: 'trade_name', label: 'Nome fantasia', type: 'text' },
-    { name: 'document', label: 'CNPJ/CPF', type: 'text' },
+    { name: 'document', label: 'CNPJ/CPF', type: 'text', validate: validDocument, help: 'Com CNPJ, use Consultar para preencher pela Receita Federal.',
+      cnpjLookup: { purpose: 'supplier', snapshot: true, fill: { legalName: 'name', tradeName: 'trade_name', stateRegistration: 'state_registration', phone: 'phone', email: 'email', cep: 'cep', addressLine: 'address', city: 'city', state: 'state' } } },
+    { name: 'state_registration', label: 'Inscrição estadual', type: 'text' },
     { name: 'contact_name', label: 'Contato', type: 'text' },
     { name: 'phone', label: 'Telefone', type: 'phone' },
     { name: 'whatsapp', label: 'WhatsApp', type: 'phone' },
     { name: 'email', label: 'E-mail', type: 'email' },
+    { name: 'cep', label: 'CEP', type: 'text' },
+    { name: 'address', label: 'Endereço', type: 'text', wide: true },
     { name: 'city', label: 'Cidade', type: 'text' },
     { name: 'state', label: 'UF', type: 'text' },
     { name: 'lead_time_days', label: 'Prazo de entrega (dias)', type: 'number', min: 0 },
@@ -251,7 +263,13 @@ export const partnersDef: ResourceDef = {
   archive: archiveStatus, status: ACTIVE, rowLink: (r) => `/parceiros/${r.id}`,
   fields: [
     { name: 'name', label: 'Nome', type: 'text', required: true, wide: true, help: 'Confirme nome e condições do parceiro citado nas anotações originais.' },
-    { name: 'document', label: 'CPF/CNPJ', type: 'text' }, { name: 'phone', label: 'Telefone', type: 'phone' }, { name: 'whatsapp', label: 'WhatsApp', type: 'phone' }, { name: 'email', label: 'E-mail', type: 'email' },
+    { name: 'document', label: 'CPF/CNPJ', type: 'text', validate: validDocument, help: 'Com CNPJ, use Consultar para preencher pela Receita Federal.',
+      cnpjLookup: { purpose: 'partner', snapshot: true, fill: { legalName: 'name', tradeName: 'trade_name', stateRegistration: 'state_registration', phone: 'phone', email: 'email', cep: 'cep', street: 'street', number: 'number', complement: 'complement', district: 'district', city: 'city', state: 'state' } } },
+    { name: 'trade_name', label: 'Nome fantasia', type: 'text' },
+    { name: 'state_registration', label: 'Inscrição estadual', type: 'text' },
+    { name: 'phone', label: 'Telefone', type: 'phone' }, { name: 'whatsapp', label: 'WhatsApp', type: 'phone' }, { name: 'email', label: 'E-mail', type: 'email' },
+    { name: 'cep', label: 'CEP', type: 'text' }, { name: 'street', label: 'Rua', type: 'text', wide: true }, { name: 'number', label: 'Número', type: 'text' },
+    { name: 'complement', label: 'Complemento', type: 'text' }, { name: 'district', label: 'Bairro', type: 'text' }, { name: 'city', label: 'Cidade', type: 'text' }, { name: 'state', label: 'UF', type: 'text' },
     { name: 'percent_event', label: 'Crédito em eventos (%)', type: 'percent', min: 0, max: 100 },
     { name: 'percent_fixed', label: 'Crédito em pontos fixos (%)', type: 'percent', min: 0, max: 100 },
     { name: 'fixed_per_order', label: 'Valor fixo por pedido (R$)', type: 'money', min: 0 },

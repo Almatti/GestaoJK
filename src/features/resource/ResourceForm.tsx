@@ -5,11 +5,14 @@ import { Modal } from '@/components/ui/Overlay';
 import { Button } from '@/components/ui/Button';
 import { Checkbox, SelectInput, TextArea, TextInput } from '@/components/ui/Form';
 import { Alert, friendlyError } from '@/components/ui/Feedback';
+import { Search } from 'lucide-react';
+import { isValidCnpj, normalizeCnpj } from '@/domain/documents';
+import { companySnapshot, formatPhoneBR, lookupCompany, stateRegistrationInfo, type CnpjData } from '@/lib/integrations/cnpj';
 import { useToast } from '@/components/ui/Toast';
 import { useList, useSave } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { buildSchema, toDbValues, toFormValues } from './schema';
-import type { FieldDef, ResourceDef } from './types';
+import type { CnpjFillKey, FieldDef, ResourceDef } from './types';
 
 const draftKey = (table: string, id?: string) => `jk-draft:${table}:${id ?? 'novo'}`;
 
@@ -28,6 +31,39 @@ export function ResourceForm({ def, row, open, onClose, onSaved }: { def: Resour
   const [restored, setRestored] = useState(false);
   const form = useForm<Row>({ resolver: zodResolver(schema) as never, defaultValues: toFormValues(def.fields, row) });
   const { register, handleSubmit, formState, reset, watch } = form;
+  const [cnpjBusy, setCnpjBusy] = useState(false);
+  const [cnpjInfo, setCnpjInfo] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null);
+  const [cnpjSnapshot, setCnpjSnapshot] = useState<Row | null>(null);
+
+  /** Consulta o CNPJ e preenche os campos mapeados; contatos só preenchem campos vazios. */
+  const consultCnpj = async (f: FieldDef) => {
+    const cfg = f.cnpjLookup!;
+    const doc = String(form.getValues(f.name) ?? '');
+    if (!isValidCnpj(doc)) return toast('Informe um CNPJ válido para consultar (a consulta não vale para CPF).', 'warning');
+    setCnpjBusy(true);
+    try {
+      const r = await lookupCompany(doc, { purpose: cfg.purpose });
+      if (!r.found || !r.data) {
+        setCnpjInfo({ tone: 'warning', text: 'CNPJ não encontrado na Receita Federal.' });
+      } else {
+        const d: CnpjData = r.data;
+        const value = (k: CnpjFillKey): string =>
+          k === 'addressLine' ? [[d.street, d.number].filter(Boolean).join(', '), d.complement, d.district].filter(Boolean).join(' — ')
+            : k === 'phone' ? (d.phone ? formatPhoneBR(d.phone) : '') : k === 'email' ? d.email.toLowerCase() : String(d[k] ?? '');
+        for (const [k, target] of Object.entries(cfg.fill) as [CnpjFillKey, string][]) {
+          const v = value(k);
+          if (!v || ((k === 'phone' || k === 'email') && form.getValues(target))) continue;
+          form.setValue(target, v, { shouldDirty: true, shouldValidate: true });
+        }
+        form.setValue(f.name, normalizeCnpj(doc), { shouldDirty: true });
+        if (cfg.snapshot) setCnpjSnapshot({ company_data: companySnapshot(d, r.source, r.checkedAt, r.registrationsChecked), registration_checked_at: r.checkedAt });
+        setCnpjInfo({ tone: 'success', text: `Situação: ${d.status || 'não informada'} · ${stateRegistrationInfo(r, d)}${d.simples != null ? ` · Simples: ${d.simples ? 'sim' : 'não'}` : ''} · Fonte: ${r.source}` });
+      }
+    } catch (e) {
+      setCnpjInfo({ tone: 'warning', text: `${friendlyError(e)} — preencha manualmente ou confira no site da Receita Federal.` });
+    }
+    setCnpjBusy(false);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -45,6 +81,8 @@ export function ResourceForm({ def, row, open, onClose, onSaved }: { def: Resour
       }
     }
     reset(values);
+    setCnpjInfo(null);
+    setCnpjSnapshot(null);
   }, [open, row, def, id, reset]);
 
   // Salvamento automático de rascunho (somente recursos não sensíveis)
@@ -79,6 +117,11 @@ export function ResourceForm({ def, row, open, onClose, onSaved }: { def: Resour
   const onSubmit = handleSubmit(async (values) => {
     try {
       let dbValues = toDbValues(def.fields, values);
+      for (const f of def.fields) {
+        // Documento salvo sem máscara (mesmo padrão dos clientes) para evitar duplicidade.
+        if (f.cnpjLookup && typeof dbValues[f.name] === 'string') dbValues[f.name] = String(dbValues[f.name]).toUpperCase().replace(/[^0-9A-Z]/g, '') || null;
+      }
+      if (cnpjSnapshot) dbValues = { ...dbValues, ...cnpjSnapshot };
       if (def.beforeSave) dbValues = def.beforeSave(dbValues, !id);
       const saved = (await save.mutateAsync({ id, values: dbValues })) as Row;
       clearDraft();
@@ -106,7 +149,7 @@ export function ResourceForm({ def, row, open, onClose, onSaved }: { def: Resour
         {def.fields.map((f) => {
           const err = formState.errors[f.name]?.message as string | undefined;
           const common = { label: f.label, required: f.required, error: err, hint: f.help, placeholder: f.placeholder };
-          const wide = f.wide || f.type === 'textarea' || f.type === 'json' ? 'sm:col-span-2' : '';
+          const wide = f.wide || f.cnpjLookup || f.type === 'textarea' || f.type === 'json' ? 'sm:col-span-2' : '';
           const reg = register(f.name);
           return (
             <div key={f.name} className={wide}>
@@ -116,6 +159,14 @@ export function ResourceForm({ def, row, open, onClose, onSaved }: { def: Resour
                 <SelectInput {...common} options={f.options ?? []} placeholder="Selecione…" {...reg} />
               ) : f.type === 'ref' ? (
                 <RefSelect field={f} register={reg} error={err} />
+              ) : f.cnpjLookup ? (
+                <div className="space-y-2">
+                  <div className="flex items-end gap-2">
+                    <TextInput wrapperClassName="flex-1" {...common} {...reg} inputMode="text" />
+                    <Button type="button" variant="soft" icon={<Search className="size-4" />} loading={cnpjBusy} onClick={() => consultCnpj(f)}>Consultar</Button>
+                  </div>
+                  {cnpjInfo && <Alert tone={cnpjInfo.tone}>{cnpjInfo.text}</Alert>}
+                </div>
               ) : f.type === 'boolean' ? (
                 <Checkbox label={f.label} hint={f.help} {...reg} />
               ) : (

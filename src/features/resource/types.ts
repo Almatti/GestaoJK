@@ -4,6 +4,9 @@ import type { CellFormat } from '@/lib/format';
 import type { Filter, Row } from '@/data/types';
 import type { Tone } from '@/domain/collections';
 
+/** Dados da consulta de CNPJ que podem preencher campos (addressLine = rua, número, complemento e bairro juntos). */
+export type CnpjFillKey = 'legalName' | 'tradeName' | 'stateRegistration' | 'cep' | 'street' | 'number' | 'complement' | 'district' | 'city' | 'state' | 'phone' | 'email' | 'addressLine';
+
 export type FieldType = 'text' | 'textarea' | 'number' | 'money' | 'percent' | 'date' | 'datetime' | 'time' | 'boolean' | 'select' | 'ref' | 'email' | 'phone' | 'tags' | 'json' | 'color';
 
 export interface FieldDef {
@@ -19,6 +22,11 @@ export interface FieldDef {
   max?: number;
   wide?: boolean;
   defaultValue?: unknown;
+  /**
+   * Campo de CPF/CNPJ com botão "Consultar" (CNPJá/Receita). `fill` mapeia dados da consulta → campos do formulário;
+   * `snapshot` grava company_data/registration_checked_at (colunas devem existir na tabela).
+   */
+  cnpjLookup?: { purpose: 'customer' | 'partner' | 'supplier'; fill: Partial<Record<CnpjFillKey, string>>; snapshot?: boolean };
   /** Validação extra: retorna mensagem de erro ou null. */
   validate?: (value: unknown, all: Row) => string | null;
 }

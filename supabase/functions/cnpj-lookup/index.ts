@@ -12,8 +12,10 @@ const CNPJ_RE = /^[0-9A-Z]{12}\d{2}$/;
 
 Deno.serve(handle(async (req) => {
   const { cnpj, purpose, refresh } = await req.json();
-  // Cadastro de clientes exige permissão em clientes; dados da empresa exigem administração.
-  await requirePerm(req, purpose === 'company' ? 'admin' : 'clientes', purpose === 'company' ? 'edit' : 'view');
+  // Permissão conforme o cadastro que pediu a consulta; dados da empresa exigem administração.
+  const PERM: Record<string, [string, string]> = { company: ['admin', 'edit'], customer: ['clientes', 'view'], partner: ['parceiros', 'view'], supplier: ['estoque', 'view'] };
+  const [resource, action] = PERM[String(purpose)] ?? PERM.customer;
+  await requirePerm(req, resource, action);
   const taxId = String(cnpj ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '');
   if (!CNPJ_RE.test(taxId)) throw new HttpError(400, 'CNPJ inválido');
 
