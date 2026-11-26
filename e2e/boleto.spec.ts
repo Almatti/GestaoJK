@@ -1,0 +1,56 @@
+import { test, expect } from '@playwright/test';
+import { login, collectErrors } from './helpers';
+import { mod11Bank, parseBoleto } from '../src/domain/boleto';
+
+/** PDF mínimo (texto pesquisável) com os dados de um boleto FICTÍCIO. */
+function makePdf(lines: string[]): Buffer {
+  const esc = (s: string) => s.replace(/[\\()]/g, (c) => `\\${c}`);
+  const content = `BT /F1 10 Tf 40 780 Td 14 TL ${lines.map((l) => `(${esc(l)}) Tj T*`).join(' ')} ET`;
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objs.forEach((o, i) => { offsets.push(pdf.length); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencimento, cliente e título', async ({ page }) => {
+  const errors = collectErrors(page);
+  const body = `3419${'1656'}${'0000123450'}1090000012345678901234567`;
+  const barcode = `${body.slice(0, 4)}${mod11Bank(body)}${body.slice(4)}`;
+  const line = parseBoleto(barcode, '2026-11-26').digitableLine;
+
+  await login(page);
+  await page.goto('/financeiro/boletos');
+  await page.getByRole('button', { name: 'Cadastrar boleto' }).click();
+
+  // 1) Pela linha digitável
+  await page.getByLabel('Linha digitável ou código de barras').fill(line);
+  await expect(page.getByText(/Boleto lido: banco 341 \(Itaú\)/)).toBeVisible();
+  await expect(page.getByLabel('Valor original (R$)')).toHaveValue('1234.50');
+  await expect(page.getByLabel('Vencimento')).toHaveValue('2026-12-10');
+  await expect(page.getByLabel('Título (conta a receber)')).toHaveValue('__novo__');
+
+  // 2) Pelo PDF: identifica o pagador pelo CNPJ cadastrado
+  await page.getByLabel('Linha digitável ou código de barras').fill('');
+  await page.locator('input[type=file][accept*="pdf"]').setInputFiles({
+    name: 'boleto.pdf', mimeType: 'application/pdf',
+    buffer: makePdf(['Pagador: Bar Esquina Feliz 11.222.333/0001-81', 'Nosso Numero 109/00001234-5', line, 'Vencimento 10/12/2026'])
+  });
+  await expect(page.getByText(/PDF lido: banco 341/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByLabel('Nosso número')).toHaveValue('109/00001234-5');
+  await expect(page.getByLabel('Cliente (pagador)')).not.toHaveValue('');
+
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  await expect(page.getByText(/Boleto cadastrado e conta a receber criada/)).toBeVisible();
+  await expect(page.getByRole('cell', { name: /R\$\s*1\.234,50/ }).first()).toBeVisible();
+  expect(errors.filter((e) => !/favicon|manifest/i.test(e))).toEqual([]);
+});

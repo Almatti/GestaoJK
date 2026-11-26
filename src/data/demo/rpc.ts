@@ -489,6 +489,32 @@ export const DEMO_RPC: Record<string, (args: Record<string, unknown>) => unknown
     return id;
   },
 
+  create_boleto: (a) => {
+    const b = (a.p_boleto ?? {}) as Row;
+    const due = String(b.due_date ?? '');
+    const amount = n(b.original_amount);
+    if (!due || !(amount > 0)) throw new Error('Informe vencimento e valor do boleto');
+    let rid = (a.p_receivable as string) || null;
+    const created = !rid;
+    if (!rid) {
+      if (!a.p_customer) throw new Error('Selecione o cliente do boleto');
+      rid = uid();
+      const issue = String(b.issue_date || todaySP());
+      table('receivables').push({ id: rid, customer_id: a.p_customer, description: String(a.p_description || `Boleto${b.document_number ? ` nº ${b.document_number}` : b.our_number ? ` — nosso nº ${b.our_number}` : ''}`),
+        installment_no: 1, installment_count: 1, competence_date: issue, issue_date: issue, due_date: due, amount, paid_amount: 0, discount_amount: 0,
+        interest_amount: 0, fine_amount: 0, status: 'em_aberto', payment_method: 'boleto', created_at: nowIso() });
+    } else {
+      const r = table('receivables').find((x) => x.id === rid);
+      if (!r) throw new Error('Título não encontrado');
+      if (a.p_customer && r.customer_id !== a.p_customer) throw new Error('O título escolhido pertence a outro cliente');
+      if (table('boletos').some((x) => x.receivable_id === rid && x.status !== 'cancelado')) throw new Error('Este título já tem um boleto ativo');
+      r.payment_method = 'boleto';
+    }
+    const id = uid();
+    const clean = Object.fromEntries(Object.entries(b).map(([k, v]) => [k, v === '' ? null : v]));
+    table('boletos').push({ ...clean, id, receivable_id: rid, original_amount: amount, issue_date: b.issue_date || todaySP(), status: 'registrado', origin: 'manual', created_at: nowIso() });
+    return { boleto_id: id, receivable_id: rid, receivable_created: created };
+  },
   transfer_between_accounts: (a) => {
     const g = uid();
     table('financial_transactions').push(

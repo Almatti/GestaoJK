@@ -4,6 +4,10 @@ Formato baseado em Keep a Changelog; versões semânticas.
 
 ## [0.3.0] — 26/11/2026
 ### Adicionado
+- Boletos: leitura da linha digitável/código de barras (FEBRABAN, com dígitos verificadores, fator de
+  vencimento 2025) e importação do PDF (texto lido no navegador, arquivo anexado); vínculo com cliente e criação
+  automática do título (`create_boleto`, transacional).
+- Consulta de CNPJ também em parceiros e fornecedores; banco aceita campos em branco usando o padrão.
 - Consulta de CNPJ em tempo real pela CNPJá (Edge Function `cnpj-lookup`): cadastro de clientes e dados da empresa
   (com atualização automática pelo prazo configurado); guarda situação, CNAE, porte, Simples/MEI, IE e sócios (sem CPF).
 - Integração Google Agenda/Tasks conectada; páginas públicas de Privacidade e Termos.

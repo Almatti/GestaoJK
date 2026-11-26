@@ -54,3 +54,18 @@ insert into meetings (title, starts_at, participants, partner_id) values ('Reuni
 select t_assert((select participants = '{}' and partner_id is null from meetings where title = 'Reunião sem participantes'), 'reunião sem informar com quem é aceita');
 select t_expect_error($$insert into partners (name) values (null)$$, 'campo obrigatório sem padrão continua exigido (nome)');
 reset role;
+-- Boleto: cria o título junto (cliente sem conta a receber) e vincula a título existente
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+create temp table bol1 as select create_boleto((select id from customers where name = 'Bar Teste Importação'), null,
+  '{"due_date":"2026-12-10","original_amount":"1500","our_number":"BOL-T1","bank_code":"341","digitable_line":"34191.09008 00012.345673 89012.345671 1 16560000150000","document_number":"NF77"}'::jsonb) r;
+select t_assert((select (r->>'receivable_created')::boolean from bol1), 'boleto sem título cria a conta a receber');
+select t_assert((select rv.amount = 1500 and rv.due_date = '2026-12-10' and rv.payment_method = 'boleto' and rv.description like 'Boleto nº NF77%'
+                 from receivables rv where rv.id = (select (r->>'receivable_id')::uuid from bol1)), 'título criado com valor, vencimento e forma de pagamento do boleto');
+select t_assert(exists (select 1 from boletos where our_number = 'BOL-T1' and receivable_id = (select (r->>'receivable_id')::uuid from bol1)), 'boleto vinculado ao título');
+select t_expect_error($$select create_boleto((select id from customers where name = 'Bar Teste Importação'), (select (r->>'receivable_id')::uuid from bol1), '{"due_date":"2026-12-10","original_amount":"1500","our_number":"BOL-T2","bank_code":"341"}'::jsonb)$$,
+  'um título não recebe dois boletos ativos');
+select t_expect_error($$select create_boleto(null, null, '{"due_date":"2026-12-10","original_amount":"10"}'::jsonb)$$, 'boleto exige cliente quando não há título');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
+select t_expect_error($$select create_boleto(null, null, '{"due_date":"2026-12-10","original_amount":"10"}'::jsonb)$$, 'técnico não cadastra boleto');
+reset role;
