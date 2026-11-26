@@ -4,6 +4,8 @@ Formato baseado em Keep a Changelog; versões semânticas.
 
 ## [0.3.0] — 26/11/2026
 ### Adicionado
+- Boletos: tela de controle com código (nº doc./seu nº), busca, filtros por situação, PDF para anexar/baixar,
+  registrar pagamento, cancelar/baixar/reativar (`set_boleto_status`), protesto e alerta de pago com pendência no cartório.
 - Boletos: carteira e nosso número lidos do código de barras (Sicoob, Itaú, Bradesco, BB, Santander, Caixa,
   Sicredi); data prevista de protesto calculada pela regra (ex.: 3 dias úteis); feriados nacionais 2025–2030.
 - Boletos: leitura da linha digitável/código de barras (FEBRABAN, com dígitos verificadores, fator de

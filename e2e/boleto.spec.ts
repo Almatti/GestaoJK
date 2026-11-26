@@ -63,5 +63,19 @@ test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencime
   await page.getByRole('button', { name: 'Salvar' }).click();
   await expect(page.getByText(/Boleto cadastrado e conta a receber criada/)).toBeVisible();
   await expect(page.getByRole('cell', { name: /R\$\s*1\.234,50/ }).first()).toBeVisible();
+  // Código visível e busca
+  await expect(page.getByRole('cell', { name: /Nº 000068/ })).toBeVisible();
+  await page.getByLabel('Buscar boleto').fill('000068');
+  await expect(page.getByRole('row')).toHaveCount(2);
+
+  // Gestão: pagamento via Pix → situação "Pago"
+  await page.getByRole('row', { name: /000068/ }).getByRole('button', { name: 'Gerenciar' }).click();
+  await page.getByRole('button', { name: 'Registrar pagamento' }).click();
+  await page.getByLabel('Forma').selectOption('pix');
+  await page.getByRole('button', { name: 'Registrar', exact: true }).click();
+  await expect(page.getByText(/Título quitado/)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /^Pagos/ }).click();
+  await expect(page.getByRole('row', { name: /000068/ }).getByText(/Pago/)).toBeVisible();
   expect(errors.filter((e) => !/favicon|manifest/i.test(e))).toEqual([]);
 });

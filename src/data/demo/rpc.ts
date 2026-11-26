@@ -515,6 +515,20 @@ export const DEMO_RPC: Record<string, (args: Record<string, unknown>) => unknown
     table('boletos').push({ ...clean, id, receivable_id: rid, original_amount: amount, issue_date: b.issue_date || todaySP(), status: 'registrado', origin: 'manual', created_at: nowIso() });
     return { boleto_id: id, receivable_id: rid, receivable_created: created };
   },
+  set_boleto_status: (a) => {
+    const b = table('boletos').find((x) => x.id === a.p_boleto);
+    if (!b) throw new Error('Boleto não encontrado');
+    if (!String(a.p_reason ?? '').trim()) throw new Error('Informe o motivo');
+    if (b.status === 'liquidado') throw new Error('Boleto já pago: para desfazer, estorne o pagamento no financeiro');
+    const r = table('receivables').find((x) => x.id === b.receivable_id);
+    if (a.p_status === 'registrado' && r?.status === 'cancelado') throw new Error('O título deste boleto está cancelado');
+    b.status = a.p_status;
+    if (a.p_cancel_receivable && a.p_status === 'cancelado' && r) {
+      if (n(r.paid_amount) > 0) throw new Error('Há pagamentos no título: estorne-os antes de cancelá-lo');
+      r.status = 'cancelado';
+    }
+    return { boleto_id: b.id, status: a.p_status };
+  },
   transfer_between_accounts: (a) => {
     const g = uid();
     table('financial_transactions').push(

@@ -80,3 +80,13 @@ select t_assert(planned_protest_date((select id from customers where name = 'Bar
 create temp table bol2 as select create_boleto((select id from customers where name = 'Bar Teste Importação'), null, '{"due_date":"2026-12-01","original_amount":"99","our_number":"BOL-T3","bank_code":"756"}'::jsonb) r;
 select t_assert((select planned_protest_date = '2026-12-04' from boletos where our_number = 'BOL-T3'), 'boleto sem data de protesto recebe a data pela regra');
 reset role;
+-- Situação do boleto
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+select t_expect_error($$select set_boleto_status((select id from boletos where our_number = 'BOL-T3'), 'cancelado', '')$$, 'cancelar exige motivo');
+select set_boleto_status((select id from boletos where our_number = 'BOL-T3'), 'cancelado', 'Cliente devolveu a mercadoria', true);
+select t_assert((select b.status = 'cancelado' and r.status = 'cancelado' from boletos b join receivables r on r.id = b.receivable_id where b.our_number = 'BOL-T3'), 'boleto e título cancelados com motivo');
+select t_expect_error($$select set_boleto_status((select id from boletos where our_number = 'BOL-T3'), 'registrado', 'engano')$$, 'não reativa boleto de título cancelado');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
+select t_expect_error($$select set_boleto_status((select id from boletos where our_number = 'BOL-T1'), 'baixado', 'x')$$, 'técnico não altera situação do boleto');
+reset role;

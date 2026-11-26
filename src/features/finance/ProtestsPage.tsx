@@ -74,7 +74,7 @@ function NewProtestDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ProtestDialog({ protest, receivable, onClose }: { protest: Row; receivable?: Row; onClose: () => void }) {
+export function ProtestDialog({ protest, receivable, onClose }: { protest: Row; receivable?: Row; onClose: () => void }) {
   const { can } = useAuth();
   const toast = useToast();
   const invalidate = useInvalidateAll();
