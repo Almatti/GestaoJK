@@ -436,8 +436,8 @@ export const meetingsDef: ResourceDef = {
     { name: 'title', label: 'Título', type: 'text', required: true, wide: true },
     { name: 'template', label: 'Modelo', type: 'select', options: opts({ administrativa: 'Administrativa', financeira: 'Financeira', operacional: 'Operacional', estrategica: 'Estratégica', parceiros: 'Com parceiros', outra: 'Outra' }) },
     { name: 'starts_at', label: 'Data e horário', type: 'datetime', required: true },
-    { name: 'partner_id', label: 'Parceiro', type: 'ref', ref: { table: 'partners', label: 'name' } },
-    { name: 'participants', label: 'Participantes (separados por vírgula)', type: 'tags' },
+    { name: 'partner_id', label: 'Parceiro (opcional)', type: 'ref', ref: { table: 'partners', label: 'name' } },
+    { name: 'participants', label: 'Participantes (opcional, separados por vírgula)', type: 'tags', help: 'Pode deixar em branco se ainda não souber com quem será.' },
     { name: 'agenda', label: 'Pauta', type: 'textarea' }
   ],
   columns: [{ key: 'title', label: 'Reunião' }, { key: 'template', label: 'Modelo' }, { key: 'starts_at', label: 'Quando', format: 'datetime' }, { key: 'status', label: 'Situação' }]

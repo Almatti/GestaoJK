@@ -43,3 +43,14 @@ select t_expect_error($$select recalc_order_totals(gen_random_uuid())$$, 'recalc
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
 select t_assert((select count(*) = 0 from receivable_charges((select id from receivables limit 1))), 'técnico não obtém encargos de títulos (RLS na função)');
 reset role;
+-- Campos em branco usam o padrão do banco (parceiro sem percentuais; reunião sem participantes nem parceiro)
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+insert into partners (name, percent_event, percent_fixed, fixed_per_order, opening_debt, offset_debt) values ('Parceiro em branco', null, null, null, null, null);
+select t_assert((select percent_event = 0 and percent_fixed = 0 and fixed_per_order = 0 and opening_debt = 0 and offset_debt from partners where name = 'Parceiro em branco'), 'parceiro com campos em branco salva com padrões');
+update partners set percent_event = null where name = 'Parceiro em branco';
+select t_assert((select percent_event = 0 from partners where name = 'Parceiro em branco'), 'apagar percentual na edição volta ao padrão');
+insert into meetings (title, starts_at, participants, partner_id) values ('Reunião sem participantes', now(), null, null);
+select t_assert((select participants = '{}' and partner_id is null from meetings where title = 'Reunião sem participantes'), 'reunião sem informar com quem é aceita');
+select t_expect_error($$insert into partners (name) values (null)$$, 'campo obrigatório sem padrão continua exigido (nome)');
+reset role;
