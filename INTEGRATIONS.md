@@ -26,3 +26,14 @@ supabase functions deploy google-sync --no-verify-jwt   # callback OAuth valida 
 supabase secrets set APP_ORIGIN=https://seu-dominio GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... GOOGLE_STATE_SECRET=$(openssl rand -hex 32)
 ```
 Cotas, preços e termos mudam: confira a documentação oficial antes de habilitar qualquer serviço.
+
+## Consulta CNPJ — CNPJá
+- Edge Function `cnpj-lookup` (permissão `clientes/view`; dados da empresa exigem `admin/edit`).
+- Segredo opcional `CNPJA_API_KEY` (Supabase → Edge Functions → Secrets). Sem ele, usa a API aberta `open.cnpja.com`
+  (gratuita, poucas consultas por minuto, sem Simples/IE).
+- Créditos (API comercial): 1 por consulta online, +1 Simples (`cnpj.include_simples`), +1 inscrição estadual
+  (`cnpj.include_registrations`). Cache `CACHE_IF_ERROR` com `maxAge = cnpj.max_age_days` (padrão 30) → consultas
+  dentro do prazo não consomem créditos. "Atualizar pela Receita" força `maxAge=1`.
+- Dados guardados: `customers.company_data` / `company.registry_data` (situação, CNAE, porte, Simples/MEI, IE, sócios
+  sem CPF), com fonte e data; cada consulta de cliente também gera registro em `customer_verifications`.
+- Empresa: ao abrir Configurações → Empresa, se a última consulta passou do prazo, reconsulta automaticamente.

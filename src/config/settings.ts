@@ -4,7 +4,7 @@ export interface SettingDef {
   key: string;
   label: string;
   type: SettingType;
-  group: 'Comercial' | 'Financeiro' | 'Patrimônio' | 'Notificações' | 'Parceiros' | 'IA' | 'Marketing';
+  group: 'Comercial' | 'Financeiro' | 'Patrimônio' | 'Notificações' | 'Parceiros' | 'IA' | 'Marketing' | 'Consulta CNPJ';
   help?: string;
   options?: { value: string; label: string }[];
   min?: number;
@@ -13,6 +13,9 @@ export interface SettingDef {
 }
 
 export const SETTING_DEFS: SettingDef[] = [
+  { key: 'cnpj.max_age_days', label: 'Validade dos dados de CNPJ (dias)', type: 'number', group: 'Consulta CNPJ', min: 1, max: 3650, default: 30, help: 'Dentro desse prazo a CNPJá responde do cache (sem custo). Depois, consulta a Receita em tempo real (consome créditos).' },
+  { key: 'cnpj.include_simples', label: 'Incluir Simples Nacional / MEI', type: 'boolean', group: 'Consulta CNPJ', default: true, help: '+1 crédito por consulta online.' },
+  { key: 'cnpj.include_registrations', label: 'Incluir inscrição estadual', type: 'boolean', group: 'Consulta CNPJ', default: true, help: '+1 crédito por consulta online.' },
   { key: 'commercial.min_margin_percent', label: 'Margem mínima comercial (%)', type: 'number', group: 'Comercial', min: 0, max: 95, default: 20, help: 'Pedidos abaixo exigem aprovação com justificativa.' },
   { key: 'commercial.margin_indicator', label: 'Indicador de aprovação', type: 'select', group: 'Comercial', default: 'contribution', options: [{ value: 'contribution', label: 'Margem de contribuição' }, { value: 'gross', label: 'Margem bruta' }] },
   { key: 'commercial.sales_tax_percent', label: 'Tributos estimados sobre vendas (%)', type: 'number', group: 'Comercial', min: 0, max: 60, default: 0, help: 'Defina com a contabilidade. Usado na DRE gerencial e no simulador.' },

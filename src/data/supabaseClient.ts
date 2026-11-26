@@ -60,7 +60,12 @@ export function createSupabaseDataClient(): DataClient {
     },
     async invoke<T>(fn: string, body: unknown) {
       const { data, error } = await sb.functions.invoke(fn, { body: body as Record<string, unknown> });
-      if (error) throw error;
+      if (error) {
+        // Mostra a mensagem enviada pela função (ex.: "Créditos da CNPJá esgotados") em vez do erro genérico.
+        const ctx = (error as { context?: Response }).context;
+        const detail = ctx && typeof ctx.json === 'function' ? await ctx.json().catch(() => null) : null;
+        throw new Error((detail as { error?: string } | null)?.error ?? error.message);
+      }
       return data as T;
     },
     auth: {

@@ -13,7 +13,7 @@ import { db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { formatDocument, isAlphanumericCnpj, isValidCnpj, isValidCpf, isValidEmail, isValidPhoneBR, normalizeCnpj, onlyDigits, VERIFICATION_STATUS } from '@/domain/documents';
 import { lookupCep } from '@/lib/integrations/cep';
-import { lookupCnpj, CNPJ_SOURCE } from '@/lib/integrations/cnpj';
+import { lookupCompany, companySnapshot, formatPhoneBR } from '@/lib/integrations/cnpj';
 
 const optionalEmail = z.string().trim().refine((v) => !v || isValidEmail(v), 'E-mail inválido');
 const optionalPhone = z.string().trim().refine((v) => !v || isValidPhoneBR(v), 'Telefone inválido (DDD + número)');
@@ -45,7 +45,7 @@ export function CustomerForm({ row, open, onClose }: { row: Row | null; open: bo
   const navigate = useNavigate();
   const invalidate = useInvalidateAll();
   const [duplicate, setDuplicate] = useState<Row | null>(null);
-  const [lookup, setLookup] = useState<{ status: keyof typeof VERIFICATION_STATUS; source: string; notes?: string; summary?: Row } | null>(null);
+  const [lookup, setLookup] = useState<{ status: keyof typeof VERIFICATION_STATUS; source: string; notes?: string; summary?: Row; snapshot?: Row; checkedAt?: string } | null>(null);
   const [busy, setBusy] = useState<'cep' | 'cnpj' | null>(null);
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: empty });
   const { register, handleSubmit, formState: { errors, isSubmitting, isDirty }, watch, setValue, reset } = form;
@@ -87,20 +87,35 @@ export function CustomerForm({ row, open, onClose }: { row: Row | null; open: bo
 
   const fillCnpj = async () => {
     setBusy('cnpj');
+    const source = 'Consulta de CNPJ';
     try {
-      const r = await lookupCnpj(form.getValues('document'));
-      if (!r) {
-        setLookup({ status: 'divergencia', source: CNPJ_SOURCE, notes: 'CNPJ não encontrado na base consultada.' });
+      const r = await lookupCompany(form.getValues('document'), { purpose: 'customer' });
+      if (!r.found || !r.data) {
+        setLookup({ status: 'divergencia', source: r.source || source, notes: 'CNPJ não encontrado na base consultada.' });
       } else {
-        setValue('name', r.legalName, { shouldDirty: true });
-        if (r.tradeName) setValue('trade_name', r.tradeName, { shouldDirty: true });
-        (['street', 'number', 'complement', 'district', 'city', 'state'] as const).forEach((k) => r[k] && setValue(k, r[k], { shouldDirty: true }));
-        if (r.cep) setValue('cep', r.cep, { shouldDirty: true });
-        setLookup({ status: 'verificado_fonte_oficial', source: CNPJ_SOURCE, notes: `Situação cadastral: ${r.status || 'não informada'}`, summary: { situacao: r.status, municipio: r.city } });
+        const d = r.data;
+        const put = (k: 'name' | 'trade_name' | 'state_registration' | 'street' | 'number' | 'complement' | 'district' | 'city' | 'state' | 'cep' | 'phone' | 'email', val: string, onlyIfEmpty = false) => {
+          if (!val || (onlyIfEmpty && form.getValues(k))) return;
+          setValue(k, val, { shouldDirty: true, shouldValidate: true });
+        };
+        put('name', d.legalName);
+        put('trade_name', d.tradeName);
+        put('state_registration', d.stateRegistration);
+        (['street', 'number', 'complement', 'district', 'city', 'state', 'cep'] as const).forEach((k) => put(k, d[k]));
+        // Contatos informados pela empresa à Receita só preenchem campos vazios (não sobrescrevem o contato comercial).
+        put('phone', d.phone ? formatPhoneBR(d.phone) : '', true);
+        put('email', d.email.toLowerCase(), true);
+        const extras = [d.simples != null && `Simples: ${d.simples ? 'sim' : 'não'}`, d.simei && 'MEI', d.mainActivity && `CNAE ${d.mainActivity.code}`].filter(Boolean).join(' · ');
+        setLookup({
+          status: 'verificado_fonte_oficial', source: r.source, checkedAt: r.checkedAt,
+          notes: `Situação cadastral: ${d.status || 'não informada'}${extras ? ` · ${extras}` : ''}${d.stale ? ' · dados do cache (fonte indisponível no momento)' : ''}`,
+          summary: { situacao: d.status, municipio: d.city, atualizado_na_fonte: d.sourceUpdated },
+          snapshot: companySnapshot(d, r.source, r.checkedAt)
+        });
       }
     } catch (e) {
-      setLookup({ status: 'consulta_indisponivel', source: CNPJ_SOURCE, notes: e instanceof Error ? e.message : 'Falha na consulta' });
-      toast('Consulta de CNPJ indisponível. Faça a conferência manual no site da Receita Federal.', 'warning');
+      setLookup({ status: 'consulta_indisponivel', source, notes: friendlyError(e) });
+      toast(`${friendlyError(e)} — se preferir, confira no site da Receita Federal.`, 'warning');
     }
     setBusy(null);
   };
@@ -114,6 +129,10 @@ export function CustomerForm({ row, open, onClose }: { row: Row | null; open: bo
       if (lookup?.status === 'verificado_fonte_oficial') {
         values.verification_status = 'verificado_fonte_oficial';
         values.registration_status = (lookup.summary?.situacao as string) ?? null;
+        if (lookup.snapshot) {
+          values.company_data = lookup.snapshot;
+          values.registration_checked_at = lookup.checkedAt ?? new Date().toISOString();
+        }
       }
       const saved = row ? await db().update<Row>('customers', String(row.id), values) : await db().insert<Row>('customers', values);
       if (lookup) {

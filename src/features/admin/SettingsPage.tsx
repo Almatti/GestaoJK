@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { lookupCompany, companySnapshot, formatPhoneBR } from '@/lib/integrations/cnpj';
+import { useAuth } from '@/features/auth/AuthContext';
 import { useList, db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { PageHeader, Card, Tabs } from '@/components/ui/Layout';
@@ -43,6 +46,57 @@ function CompanyForm() {
     }
   }, [q.data]);
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setV((s) => ({ ...s, [k]: e.target.value }));
+  const { can } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const company = q.data?.rows[0];
+  const checkedAt = (company?.registry_checked_at as string | null) ?? null;
+  const reg = (company?.registry_data as Record<string, unknown> | null) ?? null;
+  const maxAge = Number((useList<Row>('settings', { range: [0, 499] }).data?.rows.find((r) => r.key === 'cnpj.max_age_days')?.value as number | undefined) ?? 30);
+
+  /** Consulta o CNPJ e grava os dados oficiais da empresa (fonte e data registradas). */
+  const refreshFromCnpj = async (silent = false) => {
+    const doc = v.document || String(company?.document ?? '');
+    if (!doc || !isValidCnpj(doc)) {
+      if (!silent) toast('Informe um CNPJ válido da empresa.', 'warning');
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await lookupCompany(doc, { purpose: 'company', refresh: !silent });
+      if (!r.found || !r.data) throw new Error('CNPJ não encontrado na Receita Federal.');
+      const d = r.data;
+      const next = {
+        ...v, document: normalizeCnpj(doc), legal_name: d.legalName || (v.legal_name ?? ''), trade_name: d.tradeName || v.trade_name || d.legalName,
+        state_registration: d.stateRegistration || (v.state_registration ?? ''),
+        phone: v.phone || (d.phone ? formatPhoneBR(d.phone) : ''), email: v.email || d.email.toLowerCase()
+      };
+      const nextAddr = { ...addr, cep: d.cep, street: d.street, number: d.number, complement: d.complement, district: d.district, city: d.city, state: d.state };
+      await db().update('company', '1', {
+        legal_name: next.legal_name || null, trade_name: next.trade_name || null, document: next.document, state_registration: next.state_registration || null,
+        phone: next.phone || null, email: next.email || null, address: nextAddr,
+        registry_data: companySnapshot(d, r.source, r.checkedAt), registry_checked_at: r.checkedAt
+      });
+      setV(next);
+      setAddr(nextAddr);
+      invalidate();
+      if (!silent) toast(`Dados da empresa atualizados pela Receita Federal (${r.source}).`);
+    } catch (e) {
+      if (!silent) toast(friendlyError(e), 'danger');
+    }
+    setBusy(false);
+  };
+
+  // Mantém os dados da empresa atualizados: ao abrir, se a última consulta passou do prazo configurado, reconsulta.
+  const autoDone = useRef(false);
+  useEffect(() => {
+    if (autoDone.current || !company?.document || db().mode !== 'supabase' || !can('admin', 'edit')) return;
+    const age = checkedAt ? (Date.now() - new Date(checkedAt).getTime()) / 86_400_000 : Infinity;
+    if (age > maxAge) {
+      autoDone.current = true;
+      void refreshFromCnpj(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company?.document, checkedAt, maxAge]);
   const save = async () => {
     if (v.document && !isValidCnpj(v.document)) return toast('CNPJ da empresa inválido.', 'warning');
     if (v.pix_key && !detectPixKeyType(v.pix_key)) return toast('Chave Pix em formato não reconhecido (CPF/CNPJ só dígitos, e-mail, +55… ou chave aleatória).', 'warning');
@@ -59,16 +113,38 @@ function CompanyForm() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <TextInput label="Razão social" value={v.legal_name ?? ''} onChange={set('legal_name')} />
         <TextInput label="Nome fantasia" value={v.trade_name ?? ''} onChange={set('trade_name')} />
-        <TextInput label="CNPJ" value={v.document ?? ''} onChange={set('document')} />
+        <div className="flex items-end gap-2">
+          <TextInput wrapperClassName="flex-1" label="CNPJ" value={v.document ?? ''} onChange={set('document')} />
+          <Button variant="soft" icon={<RefreshCw className="size-4" />} loading={busy} onClick={() => refreshFromCnpj(false)}>Atualizar pela Receita</Button>
+        </div>
         <TextInput label="Inscrição estadual" value={v.state_registration ?? ''} onChange={set('state_registration')} />
         <TextInput label="Telefone" value={v.phone ?? ''} onChange={set('phone')} />
         <TextInput label="E-mail" value={v.email ?? ''} onChange={set('email')} />
+        <TextInput label="CEP" value={addr.cep ?? ''} onChange={(e) => setAddr((s) => ({ ...s, cep: e.target.value }))} />
         <TextInput label="Endereço" value={addr.street ?? ''} onChange={(e) => setAddr((s) => ({ ...s, street: e.target.value }))} />
+        <TextInput label="Número" value={addr.number ?? ''} onChange={(e) => setAddr((s) => ({ ...s, number: e.target.value }))} />
+        <TextInput label="Complemento" value={addr.complement ?? ''} onChange={(e) => setAddr((s) => ({ ...s, complement: e.target.value }))} />
+        <TextInput label="Bairro" value={addr.district ?? ''} onChange={(e) => setAddr((s) => ({ ...s, district: e.target.value }))} />
         <TextInput label="Cidade" value={addr.city ?? ''} onChange={(e) => setAddr((s) => ({ ...s, city: e.target.value }))} />
+        <TextInput label="UF" maxLength={2} value={addr.state ?? ''} onChange={(e) => setAddr((s) => ({ ...s, state: e.target.value.toUpperCase() }))} />
         <TextInput label="Chave Pix" value={v.pix_key ?? ''} onChange={set('pix_key')} hint={v.pix_key ? `Tipo: ${detectPixKeyType(v.pix_key) ?? 'não reconhecido'}` : 'Usada no QR Code estático e nas mensagens.'} />
         <TextInput label="Nome do recebedor (Pix, até 25)" maxLength={25} value={v.pix_merchant_name ?? ''} onChange={set('pix_merchant_name')} />
         <TextInput label="Cidade do recebedor (Pix, até 15)" maxLength={15} value={v.pix_merchant_city ?? ''} onChange={set('pix_merchant_city')} />
       </div>
+      {reg && (
+        <div className="mt-4 rounded-xl border border-tangerine-100 bg-white/60 p-3 text-sm">
+          <p className="font-semibold">Dados oficiais (Receita Federal)</p>
+          <p className="text-xs text-cocoa-700">Consultado em {checkedAt ? formatDateTimeBR(checkedAt) : '—'} · {String(reg.source ?? '')}{reg.stale ? ' · dados do cache (fonte indisponível no momento)' : ''}. Atualização automática a cada {maxAge} dia(s), configurável em Parâmetros → Consulta CNPJ.</p>
+          <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+            <div><dt className="inline text-cocoa-700">Situação: </dt><dd className="inline font-semibold">{String(reg.status ?? '—')}</dd></div>
+            <div><dt className="inline text-cocoa-700">Abertura: </dt><dd className="inline">{reg.founded ? String(reg.founded).split('-').reverse().join('/') : '—'}</dd></div>
+            <div><dt className="inline text-cocoa-700">Natureza: </dt><dd className="inline">{String(reg.nature ?? '—')}</dd></div>
+            <div><dt className="inline text-cocoa-700">Porte: </dt><dd className="inline">{String(reg.size ?? '—')}</dd></div>
+            <div><dt className="inline text-cocoa-700">Simples Nacional: </dt><dd className="inline">{reg.simples == null ? 'não consultado' : reg.simples ? 'optante' : 'não optante'}{reg.simei ? ' (MEI)' : ''}</dd></div>
+            <div className="sm:col-span-2"><dt className="inline text-cocoa-700">Atividade principal: </dt><dd className="inline">{reg.main_activity ? `${(reg.main_activity as { code: string }).code} — ${(reg.main_activity as { text: string }).text}` : '—'}</dd></div>
+          </dl>
+        </div>
+      )}
       <div className="mt-4"><Button onClick={save}>Salvar</Button></div>
     </Card>
   );

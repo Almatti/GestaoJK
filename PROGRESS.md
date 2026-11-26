@@ -14,6 +14,8 @@ sem trilha de auditoria e algumas funções avançadas exibem aviso. Ao configur
 - 12 migrations aplicadas (0100–1200): 91 tabelas, todas com RLS; 318 permissões; agendamento diário `jk-run-automations`
   (08:00 de Brasília); bucket privado `documentos`; endurecimento do Security Advisor (migration 1200).
 - Edge Functions publicadas: `invite-user`, `ai-assistant`, `google-sync` (esta com verify_jwt=false; valida state HMAC).
+- Consulta de CNPJ (CNPJá) — função `cnpj-lookup` publicada; sem `CNPJA_API_KEY` usa a API aberta (limitada).
+- Google Agenda/Tasks: conectado em 26/11/2026.
 - Páginas públicas exigidas pelo Google OAuth: `/legal/privacidade.html` e `/legal/termos.html`.
 - Proteção da Vercel (login Vercel) agora só nas versões de teste (preview); produção usa o login do próprio sistema.
 - Vercel: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (chave pública) em production+preview.

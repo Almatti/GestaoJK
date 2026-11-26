@@ -4,6 +4,9 @@ Formato baseado em Keep a Changelog; versões semânticas.
 
 ## [0.3.0] — 26/11/2026
 ### Adicionado
+- Consulta de CNPJ em tempo real pela CNPJá (Edge Function `cnpj-lookup`): cadastro de clientes e dados da empresa
+  (com atualização automática pelo prazo configurado); guarda situação, CNAE, porte, Simples/MEI, IE e sócios (sem CPF).
+- Integração Google Agenda/Tasks conectada; páginas públicas de Privacidade e Termos.
 - Banco de produção no Supabase (Almatti's Project): todas as migrations aplicadas, Edge Functions publicadas, variáveis na Vercel.
 - Importação do backup do modo local para o servidor (`import_local_backup` + tela em Administração → Backups), com testes SQL.
 ### Segurança
