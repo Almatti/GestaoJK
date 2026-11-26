@@ -7,6 +7,8 @@ import { Alert, friendlyError } from '@/components/ui/Feedback';
 import { useToast } from '@/components/ui/Toast';
 import { resetDemoDb } from '@/data/demo/client';
 import { LocalBackupCard } from './LocalBackupCard';
+import { ImportLocalCard } from './ImportLocalCard';
+import { useAuth } from '@/features/auth/AuthContext';
 
 const EXPORT_TABLES = ['company', 'settings', 'customers', 'customer_contacts', 'commercial_conditions', 'customer_product_prices', 'products', 'product_variants', 'keg_sizes', 'orders', 'order_items', 'receivables', 'payables', 'payments', 'payment_allocations', 'financial_accounts', 'financial_transactions', 'boletos', 'pix_charges', 'protest_records', 'stock_items', 'inventory_lots', 'inventory_movements', 'equipment', 'equipment_movements', 'services', 'service_orders', 'service_order_items', 'partners', 'partner_ledger', 'partner_settlements', 'calendar_events', 'tasks', 'meetings', 'notes', 'marketing_campaigns', 'marketing_contents', 'goals', 'message_templates', 'automation_rules'];
 
@@ -15,6 +17,7 @@ export function BackupsPage() {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const demo = db().mode === 'demo';
+  const { can } = useAuth();
   const exportJson = async () => {
     setBusy(true);
     try {
@@ -34,6 +37,7 @@ export function BackupsPage() {
       <PageHeader title="Backups e restauração" subtitle={db().mode === 'local' ? 'Modo local: o backup é o arquivo que guarda todos os seus dados.' : 'Exportações comuns não substituem um backup completo do banco e dos arquivos.'} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {db().mode === 'local' && <LocalBackupCard />}
+        {db().mode === 'supabase' && can('admin', 'edit') && <ImportLocalCard />}
         {db().mode === 'supabase' && <Card opaque title="Backup completo (recomendado)">
           <ol className="list-decimal space-y-2 pl-5 text-sm">
             <li>Execute <code>scripts/backup.sh</code> com <code>SUPABASE_DB_URL</code> (conexão direta do Postgres) — gera dump de esquema + dados compactado.</li>

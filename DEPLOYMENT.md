@@ -1,5 +1,10 @@
 # Implantação
 
+> **Ambiente atual (26/11/2026):** Supabase "Almatti's Project" (`vqklluhzbxngsjpopzxw`) com as migrations 0100–1200
+> aplicadas e as 3 Edge Functions publicadas; frontend na **Vercel** (projeto `gestaojk`) com `VITE_SUPABASE_URL` e
+> `VITE_SUPABASE_ANON_KEY`. Os passos abaixo servem para recriar o ambiente do zero.
+> Migrar do modo local: entre como administrador → Administração → Backups → "Trazer dados do modo local".
+
 ## 1. Supabase (banco, autenticação, arquivos, funções)
 1. Crie um projeto em https://supabase.com (região São Paulo recomendada).
 2. Aplique as migrations, em ordem:
@@ -10,7 +15,10 @@
 5. Verifique que `pg_cron` está habilitado (Database → Extensions) e que o job `jk-run-automations` existe (`select * from cron.job`). Se a extensão foi habilitada depois das migrations, rode novamente o bloco de agendamento da migration 0800.
 6. (Opcional) Publique as Edge Functions e segredos — ver INTEGRATIONS.md.
 
-## 2. Frontend (Cloudflare Pages)
+## 2. Frontend (Vercel — atual; ou Cloudflare Pages)
+Vercel: o repositório já tem `vercel.json`; defina as duas variáveis em Settings → Environment Variables e publique.
+
+Cloudflare Pages:
 1. Cloudflare → Workers & Pages → Create → Pages → conecte o repositório GitHub.
 2. Build: `npm run build`; diretório de saída: `dist`; Node 22.
 3. Variáveis: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (pública). **Nunca** a service_role.

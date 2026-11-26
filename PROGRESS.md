@@ -7,11 +7,26 @@ O app publicado abre no **modo local** enquanto o Supabase não estiver configur
 começa vazio (sem dados fictícios), guarda tudo no navegador do dispositivo (`localStorage`, chave `jk-local-db-v1`),
 tem PIN opcional, lembrete de backup semanal e **backup/restauração por arquivo JSON** (Administração → Backups).
 Limitações: dados por navegador (sem sincronização entre aparelhos), sem anexos, sem perfis múltiplos reais,
-sem trilha de auditoria e algumas funções avançadas exibem aviso. Ao configurar o Supabase, ele passa a ter prioridade;
-a importação do backup local para o Supabase é a próxima etapa a implementar.
+sem trilha de auditoria e algumas funções avançadas exibem aviso. Ao configurar o Supabase, ele passa a ter prioridade.
+
+## Servidor (Supabase) — CONFIGURADO em 26/11/2026
+- Projeto **Almatti's Project** (`vqklluhzbxngsjpopzxw`, São Paulo/sa-east-1). Tabelas antigas vazias removidas com aprovação.
+- 12 migrations aplicadas (0100–1200): 91 tabelas, todas com RLS; 318 permissões; agendamento diário `jk-run-automations`
+  (08:00 de Brasília); bucket privado `documentos`; endurecimento do Security Advisor (migration 1200).
+- Edge Functions publicadas: `invite-user`, `ai-assistant`, `google-sync` (esta com verify_jwt=false; valida state HMAC).
+- Vercel: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (chave pública) em production+preview.
+- **Importação do modo local** (Administração → Backups, admin): função `import_local_backup` transacional e idempotente,
+  preserva totais/status/snapshots, reaproveita catálogos e clientes por chave natural (CNPJ), religa dependentes.
+
+### Próximos passos (dependem do usuário)
+1. Criar o 1º usuário em Supabase → Authentication → Users (vira administrador) e desativar cadastro público.
+2. Entrar no app e importar os dados do modo local (botão "Importar dados deste navegador").
+3. Segredos das Edge Functions: `APP_ORIGIN`, e quando quiser as integrações: `GEMINI_API_KEY`,
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_STATE_SECRET`.
+4. Revisar empresa, Pix e regras de cobrança; convidar a equipe com papéis.
 
 ## Resumo
-Fases 1 a 8 implementadas em primeira versão funcional: domínio testado, banco com RLS e funções transacionais, ~45 telas, PWA, assistente determinístico, motor de automações, Edge Functions, backups, CI e documentação. **Não está em produção**: falta aplicar as migrations em um projeto Supabase real, cadastrar dados reais e configurar integrações que dependem de credenciais.
+Fases 1 a 8 implementadas em primeira versão funcional: domínio testado, banco com RLS e funções transacionais, ~45 telas, PWA, assistente determinístico, motor de automações, Edge Functions, backups, CI e documentação. Banco de produção configurado (ver seção acima); faltam o primeiro usuário, a importação dos dados locais e as credenciais das integrações.
 
 ## Implementado e testado
 | Fase | Itens |
@@ -26,7 +41,7 @@ Fases 1 a 8 implementadas em primeira versão funcional: domínio testado, banco
 | 8 Validação | 58 testes unitários, 73 asserções SQL (cenários 1–9), 15 E2E (desktop+mobile), teste de backup/restauração, build/lint/typecheck, CI GitHub Actions, PWA (manifest, ícones, SW com atualização controlada), cabeçalhos de segurança, documentação |
 
 ## Integrações dependentes de credenciais (pendentes)
-Supabase (projeto real), Google Agenda/Tasks (OAuth), Gemini API, WhatsApp Business Platform (paga), Serpro (paga), API do banco (boletos/CNAB), API Pix dinâmica, Meta/Instagram. Todas com interface preparada e alternativa manual funcional (ver INTEGRATIONS.md).
+Google Agenda/Tasks (OAuth), Gemini API, WhatsApp Business Platform (paga), Serpro (paga), API do banco (boletos/CNAB), API Pix dinâmica, Meta/Instagram. Todas com interface preparada e alternativa manual funcional (ver INTEGRATIONS.md).
 
 ## Decisões técnicas
 Ver ARCHITECTURE.md (ADR). Destaques: regras transacionais em SQL; status derivados não gravados; modo demonstração isolado; cadastros declarativos; tokens em `@theme`; empresa única (sem multi-tenant — tabela `company` singleton).

@@ -2,6 +2,15 @@
 
 Formato baseado em Keep a Changelog; versões semânticas.
 
+## [0.3.0] — 26/11/2026
+### Adicionado
+- Banco de produção no Supabase (Almatti's Project): todas as migrations aplicadas, Edge Functions publicadas, variáveis na Vercel.
+- Importação do backup do modo local para o servidor (`import_local_backup` + tela em Administração → Backups), com testes SQL.
+### Segurança
+- Migration 1200: funções internas sem execução pela API; `receivable_charges`, `resolve_price` e
+  `effective_collection_rule` passam a respeitar a RLS de quem chama; view `customer_consumption` sem acesso anônimo;
+  `search_path` fixo em funções utilitárias.
+
 ## [0.2.0] — 26/11/2026
 ### Adicionado
 - **Modo local**: uso real imediato sem servidor (dados no navegador, começa vazio), login por nome + PIN opcional,
