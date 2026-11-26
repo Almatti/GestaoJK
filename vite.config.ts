@@ -35,6 +35,7 @@ export default defineConfig({
         // Apenas a casca da aplicação é cacheada. Nenhuma resposta de API (dados financeiros/pessoais) vai para o cache.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/legal\//],
         runtimeCaching: []
       }
     })
