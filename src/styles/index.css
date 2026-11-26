@@ -1,0 +1,117 @@
+@import '@fontsource-variable/manrope';
+@import '@fontsource-variable/inter';
+@import 'tailwindcss';
+
+/*
+ * JK CHOPP GESTÃO — Design tokens (Tangerine Rush). Fonte ÚNICA de cores, raios, sombras e tipografia.
+ * Altere aqui para mudar a identidade visual em toda a aplicação. Ver DESIGN_SYSTEM.md.
+ */
+@theme {
+  --color-tangerine-900: #a63900; /* destaque de alto contraste (texto sobre claro) */
+  --color-tangerine-800: #d64101; /* laranja profundo */
+  --color-tangerine-700: #fc6500; /* laranja vibrante */
+  --color-tangerine-500: #ff8f2e; /* intermediário */
+  --color-tangerine-400: #ffa95e; /* suave */
+  --color-tangerine-200: #ffcc97; /* pêssego claro */
+  --color-tangerine-100: #fde3cc;
+  --color-cream-200: #fdeadd; /* fundo quente */
+  --color-cream-100: #fff7f0; /* fundo secundário */
+  --color-cocoa-900: #69351f; /* texto principal */
+  --color-cocoa-700: #92543a; /* texto secundário */
+  --color-cocoa-500: #b07a60;
+
+  --color-success-50: #ecf8f0;
+  --color-success-700: #1e7a46;
+  --color-warning-50: #fff5db;
+  --color-warning-700: #8a5a00;
+  --color-danger-50: #fdecea;
+  --color-danger-700: #b3261e;
+  --color-info-50: #eaf2fd;
+  --color-info-700: #1f5fa8;
+
+  --font-display: 'Manrope Variable', 'Manrope', system-ui, sans-serif;
+  --font-sans: 'Inter Variable', 'Inter', system-ui, sans-serif;
+
+  --radius-card: 24px;
+  --radius-card-sm: 16px;
+  --radius-control: 14px;
+
+  --shadow-soft: 0 10px 30px -12px rgb(166 57 0 / 0.18), 0 2px 6px -2px rgb(105 53 31 / 0.06);
+  --shadow-lift: 0 18px 40px -14px rgb(166 57 0 / 0.28), 0 4px 10px -4px rgb(105 53 31 / 0.08);
+  --shadow-glow: 0 8px 24px -6px rgb(252 101 0 / 0.45);
+
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-fade-in: fade-in 200ms var(--ease-soft);
+  --animate-rise: rise 220ms var(--ease-soft);
+}
+
+@keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes rise { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+@keyframes shimmer { 0% { background-position: -400px 0 } 100% { background-position: 400px 0 } }
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply font-sans text-cocoa-900 antialiased;
+    background:
+      radial-gradient(1200px 600px at 100% -10%, rgb(255 169 94 / 0.35), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgb(255 204 151 / 0.45), transparent 60%),
+      linear-gradient(180deg, var(--color-cream-100), var(--color-cream-200));
+    background-attachment: fixed;
+    min-height: 100dvh;
+  }
+  h1, h2, h3, h4 { @apply font-display tracking-tight; }
+  :focus-visible { outline: 3px solid var(--color-tangerine-700); outline-offset: 2px; border-radius: 8px; }
+  ::selection { background: var(--color-tangerine-200); }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+  }
+}
+
+/* Componentes base como utilitários (Tailwind v4: @utility permite @apply e variantes). */
+/* Vidro fosco — cards de destaque, menus e dashboard */
+@utility glass {
+  background: linear-gradient(145deg, rgb(255 255 255 / 0.72), rgb(255 247 240 / 0.55));
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgb(255 255 255 / 0.75);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgb(255 255 255 / 0.8);
+}
+/* Superfície OPACA — formulários, tabelas financeiras e informação crítica */
+@utility surface {
+  background: #ffffff;
+  border: 1px solid rgb(255 204 151 / 0.55);
+  box-shadow: var(--shadow-soft);
+}
+@utility card {
+  @apply glass rounded-[var(--radius-card)] p-5;
+}
+@utility card-sm {
+  @apply rounded-[var(--radius-card-sm)] p-4;
+}
+@utility num {
+  font-variant-numeric: tabular-nums;
+}
+@utility label {
+  @apply mb-1 block text-sm font-medium text-cocoa-900;
+}
+@utility hint {
+  @apply mt-1 text-xs text-cocoa-700;
+}
+@utility input {
+  @apply w-full rounded-[var(--radius-control)] border border-tangerine-200 bg-white px-3.5 py-2.5 text-[15px] text-cocoa-900 placeholder:text-cocoa-500 transition-[border,box-shadow] duration-200 outline-none;
+  &:focus { border-color: var(--color-tangerine-700); box-shadow: 0 0 0 4px rgb(252 101 0 / 0.15); }
+  &[aria-invalid='true'] { border-color: var(--color-danger-700); }
+  &:disabled { background-color: var(--color-cream-100); color: var(--color-cocoa-700); cursor: not-allowed; }
+}
+@utility skeleton {
+  background: linear-gradient(90deg, rgb(255 204 151 / 0.25) 0, rgb(255 247 240 / 0.9) 50%, rgb(255 204 151 / 0.25) 100%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 0.75rem;
+}
+
+@media print {
+  aside, header, nav, .no-print { display: none !important; }
+  body { background: #fff; }
+}
