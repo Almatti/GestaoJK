@@ -18,7 +18,17 @@ export interface CnpjLookup {
   found: boolean;
   source: string;
   checkedAt: string;
+  /** true quando a fonte consultou inscrições estaduais (API comercial). */
+  registrationsChecked?: boolean;
   data?: CnpjData;
+}
+
+/** Texto da situação da inscrição estadual para exibir ao usuário. */
+export function stateRegistrationInfo(r: Pick<CnpjLookup, 'registrationsChecked'>, d: CnpjData): string {
+  if (!r.registrationsChecked) return 'IE não consultada (requer a chave da API comercial CNPJá)';
+  if (d.stateRegistration) return `IE ${d.stateRegistration}${d.state ? `/${d.state}` : ''}`;
+  if (d.registrations.length) return `Sem IE ativa (${d.registrations.map((x) => `${x.number}/${x.state}: ${x.status || (x.enabled ? 'ativa' : 'inativa')}`).join('; ')})`;
+  return 'Sem inscrição estadual na UF (contribuinte isento ou não inscrito)';
 }
 
 /** Consulta pública via BrasilAPI (usada sem servidor). */
@@ -48,13 +58,13 @@ export async function lookupCompany(cnpj: string, opts: { purpose?: 'customer' |
     return db().invoke<CnpjLookup>('cnpj-lookup', { cnpj: normalizeCnpj(cnpj), purpose: opts.purpose ?? 'customer', refresh: opts.refresh === true });
   }
   const data = await lookupCnpjBrasilApi(cnpj);
-  return { found: !!data, source: CNPJ_SOURCE, checkedAt: new Date().toISOString(), data: data ?? undefined };
+  return { found: !!data, source: CNPJ_SOURCE, checkedAt: new Date().toISOString(), registrationsChecked: false, data: data ?? undefined };
 }
 
 /** Resumo enxuto guardado junto do cadastro (sem CPFs). */
-export function companySnapshot(d: CnpjData, source: string, checkedAt: string) {
+export function companySnapshot(d: CnpjData, source: string, checkedAt: string, registrationsChecked = false) {
   return {
-    source, checked_at: checkedAt, source_updated: d.sourceUpdated, stale: d.stale, status: d.status, status_date: d.statusDate,
+    source, checked_at: checkedAt, registrations_checked: registrationsChecked, source_updated: d.sourceUpdated, stale: d.stale, status: d.status, status_date: d.statusDate,
     founded: d.founded, head: d.head, nature: d.nature, size: d.size, equity: d.equity, simples: d.simples, simei: d.simei,
     main_activity: d.mainActivity, side_activities: d.sideActivities, phones: d.phones, emails: d.emails,
     registrations: d.registrations, members: d.members

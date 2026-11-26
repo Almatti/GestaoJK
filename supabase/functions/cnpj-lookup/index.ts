@@ -41,6 +41,8 @@ Deno.serve(handle(async (req) => {
     found: true,
     source: key ? 'CNPJá — API comercial (Receita Federal, Simples Nacional, CCC)' : 'CNPJá — API aberta (Receita Federal)',
     checkedAt: new Date().toISOString(),
+    // Inscrição estadual só vem da API comercial (CCC/SINTEGRA); a API aberta não informa IE.
+    registrationsChecked: !!key && cfg['cnpj.include_registrations'] !== false,
     data
   });
 }));

@@ -13,7 +13,7 @@ import { db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { formatDocument, isAlphanumericCnpj, isValidCnpj, isValidCpf, isValidEmail, isValidPhoneBR, normalizeCnpj, onlyDigits, VERIFICATION_STATUS } from '@/domain/documents';
 import { lookupCep } from '@/lib/integrations/cep';
-import { lookupCompany, companySnapshot, formatPhoneBR } from '@/lib/integrations/cnpj';
+import { lookupCompany, companySnapshot, formatPhoneBR, stateRegistrationInfo } from '@/lib/integrations/cnpj';
 
 const optionalEmail = z.string().trim().refine((v) => !v || isValidEmail(v), 'E-mail inválido');
 const optionalPhone = z.string().trim().refine((v) => !v || isValidPhoneBR(v), 'Telefone inválido (DDD + número)');
@@ -105,12 +105,12 @@ export function CustomerForm({ row, open, onClose }: { row: Row | null; open: bo
         // Contatos informados pela empresa à Receita só preenchem campos vazios (não sobrescrevem o contato comercial).
         put('phone', d.phone ? formatPhoneBR(d.phone) : '', true);
         put('email', d.email.toLowerCase(), true);
-        const extras = [d.simples != null && `Simples: ${d.simples ? 'sim' : 'não'}`, d.simei && 'MEI', d.mainActivity && `CNAE ${d.mainActivity.code}`].filter(Boolean).join(' · ');
+        const extras = [stateRegistrationInfo(r, d), d.simples != null && `Simples: ${d.simples ? 'sim' : 'não'}`, d.simei && 'MEI', d.mainActivity && `CNAE ${d.mainActivity.code}`].filter(Boolean).join(' · ');
         setLookup({
           status: 'verificado_fonte_oficial', source: r.source, checkedAt: r.checkedAt,
           notes: `Situação cadastral: ${d.status || 'não informada'}${extras ? ` · ${extras}` : ''}${d.stale ? ' · dados do cache (fonte indisponível no momento)' : ''}`,
           summary: { situacao: d.status, municipio: d.city, atualizado_na_fonte: d.sourceUpdated },
-          snapshot: companySnapshot(d, r.source, r.checkedAt)
+          snapshot: companySnapshot(d, r.source, r.checkedAt, r.registrationsChecked)
         });
       }
     } catch (e) {

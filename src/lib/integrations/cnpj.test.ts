@@ -60,3 +60,13 @@ describe('consulta de CNPJ (CNPJá)', () => {
     expect(d?.phone).toBe('1133334444');
   });
 });
+
+describe('inscrição estadual', () => {
+  it('explica quando a IE não foi consultada, quando existe e quando não há', async () => {
+    const { stateRegistrationInfo } = await import('./cnpj');
+    const d = normalizeCnpjaOffice(office);
+    expect(stateRegistrationInfo({ registrationsChecked: false }, d)).toMatch(/não consultada/);
+    expect(stateRegistrationInfo({ registrationsChecked: true }, d)).toBe('IE 111222333/SP');
+    expect(stateRegistrationInfo({ registrationsChecked: true }, normalizeCnpjaOffice({ ...office, registrations: [] }))).toMatch(/Sem inscrição estadual/);
+  });
+});

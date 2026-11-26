@@ -74,7 +74,7 @@ function CompanyForm() {
       await db().update('company', '1', {
         legal_name: next.legal_name || null, trade_name: next.trade_name || null, document: next.document, state_registration: next.state_registration || null,
         phone: next.phone || null, email: next.email || null, address: nextAddr,
-        registry_data: companySnapshot(d, r.source, r.checkedAt), registry_checked_at: r.checkedAt
+        registry_data: companySnapshot(d, r.source, r.checkedAt, r.registrationsChecked), registry_checked_at: r.checkedAt
       });
       setV(next);
       setAddr(nextAddr);
@@ -140,6 +140,7 @@ function CompanyForm() {
             <div><dt className="inline text-cocoa-700">Abertura: </dt><dd className="inline">{reg.founded ? String(reg.founded).split('-').reverse().join('/') : '—'}</dd></div>
             <div><dt className="inline text-cocoa-700">Natureza: </dt><dd className="inline">{String(reg.nature ?? '—')}</dd></div>
             <div><dt className="inline text-cocoa-700">Porte: </dt><dd className="inline">{String(reg.size ?? '—')}</dd></div>
+            <div className="sm:col-span-2"><dt className="inline text-cocoa-700">Inscrição estadual: </dt><dd className="inline font-semibold">{!reg.registrations_checked ? 'não consultada — cadastre a chave da API comercial CNPJá (CNPJA_API_KEY)' : (reg.registrations as { number: string; state: string; status: string; enabled: boolean }[] | undefined)?.length ? (reg.registrations as { number: string; state: string; status: string; enabled: boolean }[]).map((x) => `${x.number}/${x.state} (${x.status || (x.enabled ? 'ativa' : 'inativa')})`).join('; ') : 'nenhuma inscrição na UF (isenta ou não inscrita)'}</dd></div>
             <div><dt className="inline text-cocoa-700">Simples Nacional: </dt><dd className="inline">{reg.simples == null ? 'não consultado' : reg.simples ? 'optante' : 'não optante'}{reg.simei ? ' (MEI)' : ''}</dd></div>
             <div className="sm:col-span-2"><dt className="inline text-cocoa-700">Atividade principal: </dt><dd className="inline">{reg.main_activity ? `${(reg.main_activity as { code: string }).code} — ${(reg.main_activity as { text: string }).text}` : '—'}</dd></div>
           </dl>
