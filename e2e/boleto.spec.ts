@@ -43,10 +43,11 @@ test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencime
   await page.getByLabel('Linha digitável ou código de barras').fill('');
   await page.locator('input[type=file][accept*="pdf"]').setInputFiles({
     name: 'boleto.pdf', mimeType: 'application/pdf',
-    buffer: makePdf(['Pagador: Bar Esquina Feliz 11.222.333/0001-81', 'Nosso Numero 109/00001234-5', line, 'Vencimento 10/12/2026'])
+    buffer: makePdf(['Pagador: Bar Esquina Feliz 11.222.333/0001-81', 'Nosso Numero 109/00000123-4', 'Carteira 109', line, 'Vencimento 10/12/2026'])
   });
   await expect(page.getByText(/PDF lido: banco 341/)).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByLabel('Nosso número')).toHaveValue('109/00001234-5');
+  await expect(page.getByLabel('Nosso número')).toHaveValue('109/00000123-4');
+  await expect(page.getByLabel('Carteira')).toHaveValue('109');
   await expect(page.getByLabel('Cliente (pagador)')).not.toHaveValue('');
 
   await page.getByRole('button', { name: 'Salvar' }).click();
