@@ -1,0 +1,15 @@
+# Configuração do Supabase CLI (desenvolvimento local / deploy de funções).
+project_id = "jk-chopp-gestao"
+
+[auth]
+# Sem cadastro público: usuários entram por convite (Edge Function invite-user) ou ficam inativos até aprovação.
+enable_signup = false
+site_url = "http://localhost:5173"
+
+[auth.email]
+enable_signup = false
+enable_confirmations = true
+
+[functions.google-sync]
+# O retorno do OAuth (GET) chega sem JWT; a função valida o state assinado (HMAC).
+verify_jwt = false

@@ -220,3 +220,8 @@ select t_assert((select count(*) > 0 from audit_logs where table_name = 'receiva
 select t_assert((select count(*) = 0 from audit_logs where new_data ? 'document' and new_data->>'document' not like '***%'), 'documentos mascarados no log de auditoria');
 select t_assert((select count(*) >= 1 from audit_logs where reason like 'Estorno:%'), 'estorno auditado com justificativa');
 select t_assert((select count(*) >= 1 from audit_logs where reason like 'Exceção de margem:%'), 'exceção de margem auditada');
+-- Segredos de integração inacessíveis a usuários (inclusive admin) via API
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+select t_expect_error($$select * from integration_secrets$$, 'segredos de integração inacessíveis pela API (mesmo admin)');
+reset role;
