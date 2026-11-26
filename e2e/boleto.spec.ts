@@ -3,15 +3,16 @@ import { login, collectErrors } from './helpers';
 import { mod11Bank, parseBoleto } from '../src/domain/boleto';
 
 /** PDF mínimo (texto pesquisável) com os dados de um boleto FICTÍCIO. */
-function makePdf(lines: string[]): Buffer {
+function makePdf(lines: string[], boxes: [number, number, number, string][] = []): Buffer {
   const esc = (s: string) => s.replace(/[\\()]/g, (c) => `\\${c}`);
-  const content = `BT /F1 10 Tf 40 780 Td 14 TL ${lines.map((l) => `(${esc(l)}) Tj T*`).join(' ')} ET`;
+  const positioned = boxes.map(([x, y, size, t]) => `BT /F1 ${size} Tf ${x} ${y} Td (${esc(t)}) Tj ET`).join(' ');
+  const content = `BT /F1 10 Tf 40 780 Td 14 TL ${lines.map((l) => `(${esc(l)}) Tj T*`).join(' ')} ET ${positioned}`;
   const objs = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
     `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'
   ];
   let pdf = '%PDF-1.4\n';
   const offsets: number[] = [];
@@ -43,11 +44,20 @@ test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencime
   await page.getByLabel('Linha digitável ou código de barras').fill('');
   await page.locator('input[type=file][accept*="pdf"]').setInputFiles({
     name: 'boleto.pdf', mimeType: 'application/pdf',
-    buffer: makePdf(['Pagador: Bar Esquina Feliz 11.222.333/0001-81', 'Nosso Numero 109/00000123-4', 'Carteira 109', line, 'Vencimento 10/12/2026'])
+    buffer: makePdf(['Pagador: Bar Esquina Feliz 11.222.333/0001-81', line, 'Vencimento 10/12/2026'], [
+      // Ficha de compensação: rótulo pequeno no alto da caixa, valor abaixo
+      [40, 500, 6, 'Data do documento'], [130, 500, 6, 'N\xba do documento'], [230, 500, 6, 'Nosso n\xfamero'],
+      [40, 490, 9, '20/11/2026'], [130, 490, 9, '000068'], [230, 490, 9, '109/00000123-4'],
+      [40, 470, 6, 'Carteira'], [130, 470, 6, 'Seu n\xfamero'],
+      [40, 460, 9, '109'], [130, 460, 9, 'PED-120']
+    ])
   });
   await expect(page.getByText(/PDF lido: banco 341/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByLabel('Nosso número')).toHaveValue('109/00000123-4');
   await expect(page.getByLabel('Carteira')).toHaveValue('109');
+  await expect(page.getByLabel('Número do documento')).toHaveValue('000068');
+  await expect(page.getByLabel('Seu número')).toHaveValue('PED-120');
+  await expect(page.getByLabel('Emissão')).toHaveValue('2026-11-20');
   await expect(page.getByLabel('Cliente (pagador)')).not.toHaveValue('');
 
   await page.getByRole('button', { name: 'Salvar' }).click();

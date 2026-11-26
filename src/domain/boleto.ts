@@ -233,10 +233,57 @@ export interface BoletoPdfHints {
   wallet: string | null;
   ourNumber: string | null;
   documentNumber: string | null;
+  yourNumber: string | null;
+  /** Data do documento (emissão) AAAA-MM-DD. */
+  issueDate: string | null;
 }
 
-/** Extrai do texto do PDF informações que não estão no código: CPF/CNPJ citados, nosso número e nº do documento. */
-export function extractBoletoHints(text: string): BoletoPdfHints {
+/** Trecho de texto do PDF com posição (coordenadas do PDF: y cresce para cima). */
+export interface PdfTextItem { str: string; x: number; y: number; w: number; h: number; page: number }
+
+type FieldKey = 'documentNumber' | 'yourNumber' | 'ourNumber' | 'wallet' | 'issueDate';
+
+/** Rótulos impressos no boleto (variações entre bancos) e o formato aceito para o valor. */
+const FIELDS: Record<FieldKey, { label: RegExp; value: RegExp }> = {
+  documentNumber: { label: /^(?:N[úu]mero|N[º°o.]+|Num\.?|Nro\.?)\s*(?:d[oe]\s*)?Doc(?:umento|to|\.)?/i, value: /^[0-9A-Z][0-9A-Z./-]{0,24}$/i },
+  yourNumber: { label: /^Seu\s*(?:N[úu]mero|N[º°o.]+)/i, value: /^[0-9A-Z][0-9A-Z./-]{0,24}$/i },
+  ourNumber: { label: /^Nosso\s*(?:N[úu]mero|N[º°o.]+)/i, value: /^[0-9][0-9./ -]{1,30}$/ },
+  wallet: { label: /^Carteira\b/i, value: /^[0-9A-Z]{1,3}$/i },
+  issueDate: { label: /^Data\s*(?:d[oe]\s*)?Doc(?:umento|to|\.)?/i, value: /^\d{2}\/\d{2}\/\d{4}$/ }
+};
+const ANY_LABEL = /^(Nosso|Seu|N[úu]mero|N[º°o.]+\s*Doc|Num\.?|Carteira|Data|Esp[ée]cie|Aceite|Vencimento|Valor|Ag[êe]ncia|Benefici|Pagador|Sacado|Uso\s*do|Local|Instru|Quantidade|Moeda)/i;
+
+/**
+ * Lê campos pela posição no PDF: o boleto imprime o rótulo (ex.: "Nº Documento") no alto de uma caixa e o valor
+ * logo abaixo, ou à direita na mesma linha. Procura o valor mais próximo com o formato esperado.
+ */
+export function extractBoletoFieldsByPosition(items: readonly PdfTextItem[]): Partial<Record<FieldKey, string>> {
+  const out: Partial<Record<FieldKey, string>> = {};
+  for (const [key, def] of Object.entries(FIELDS) as [FieldKey, (typeof FIELDS)[FieldKey]][]) {
+    for (const label of items.filter((i) => def.label.test(i.str))) {
+      // Valor no próprio trecho do rótulo (ex.: "Nosso Número: 123/45")
+      const inline = label.str.replace(def.label, '').replace(/^[\s:.-]+/, '').trim();
+      if (inline && def.value.test(inline)) { out[key] = inline; break; }
+      let best: { item: PdfTextItem; score: number } | null = null;
+      for (const it of items) {
+        if (it === label || it.page !== label.page || ANY_LABEL.test(it.str) || !def.value.test(it.str)) continue;
+        const dy = label.y - it.y; // positivo = abaixo do rótulo
+        const dx = it.x - label.x;
+        let score: number | null = null;
+        if (dy > 0 && dy <= label.h * 3 + 14 && dx > -25 && dx < Math.max(label.w, 40) + 120) score = dy + Math.abs(dx) * 0.2;
+        else if (Math.abs(dy) <= 3 && dx > label.w - 2 && dx < label.w + 160) score = 50 + dx * 0.1;
+        if (score != null && (!best || score < best.score)) best = { item: it, score };
+      }
+      if (best) { out[key] = best.item.str; break; }
+    }
+  }
+  return out;
+}
+
+const brToIso = (d: string | null | undefined) => (d && /^\d{2}\/\d{2}\/\d{4}$/.test(d) ? `${d.slice(6, 10)}-${d.slice(3, 5)}-${d.slice(0, 2)}` : null);
+
+/** Extrai do PDF o que não está no código: CPF/CNPJ, nosso número, nº do documento, seu número, carteira e emissão. */
+export function extractBoletoHints(text: string, items: readonly PdfTextItem[] = []): BoletoPdfHints {
   const flat = text.replace(/\s+/g, ' ');
   const documents = [...new Set([
     ...[...flat.matchAll(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g)].map((m) => digits(m[0])),
@@ -246,10 +293,13 @@ export function extractBoletoHints(text: string): BoletoPdfHints {
     const m = label.exec(flat);
     return m ? (m[1] ?? '').trim() || null : null;
   };
+  const pos = extractBoletoFieldsByPosition(items);
   return {
     documents,
-    wallet: after(/Carteira[:\s]*([0-9A-Z]{1,3})\b/i),
-    ourNumber: after(/Nosso\s*N[úu]mero[:\s]*([0-9][0-9./-]{2,30}[0-9])/i),
-    documentNumber: after(/N[úu]m(?:ero|\.)?\s*(?:do\s*)?Documento[:\s]*([0-9A-Z][0-9A-Z./-]{0,24})/i)
+    wallet: pos.wallet ?? after(/Carteira[:\s]*([0-9A-Z]{1,3})\b/i),
+    ourNumber: pos.ourNumber?.replace(/\s+/g, '') ?? after(/Nosso\s*(?:N[úu]mero|N[º°o.]+)[:\s]*([0-9][0-9./-]{2,30}[0-9])/i),
+    documentNumber: pos.documentNumber ?? after(/(?:N[úu]mero|N[º°o.]+|Num\.?)\s*(?:d[oe]\s*)?Doc(?:umento|to|\.)?[:\s]*([0-9A-Z][0-9A-Z./-]{0,24})/i),
+    yourNumber: pos.yourNumber ?? after(/Seu\s*(?:N[úu]mero|N[º°o.]+)[:\s]*([0-9A-Z][0-9A-Z./-]{0,24})/i),
+    issueDate: brToIso(pos.issueDate ?? after(/Data\s*(?:d[oe]\s*)?Doc(?:umento|to|\.)?[:\s]*(\d{2}\/\d{2}\/\d{4})/i))
   };
 }

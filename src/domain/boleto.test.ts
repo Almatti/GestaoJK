@@ -95,3 +95,31 @@ describe('carteira e nosso número pelo código de barras', () => {
     expect(extractBoletoHints('Carteira 109 Espécie R$').wallet).toBe('109');
   });
 });
+
+describe('campos do PDF pela posição (rótulo em cima, valor embaixo)', () => {
+  const it8 = (str: string, x: number, y: number, h = 6) => ({ str, x, y, w: str.length * h * 0.5, h, page: 1 });
+  // Ficha de compensação típica: rótulos pequenos no alto das caixas, valores abaixo
+  const items = [
+    it8('Data do documento', 40, 500), it8('Nº do documento', 120, 500), it8('Espécie doc.', 200, 500), it8('Aceite', 250, 500),
+    it8('Data processamento', 290, 500), it8('Nosso número', 420, 500),
+    it8('26/11/2026', 40, 490, 9), it8('000068', 120, 490, 9), it8('DM', 200, 490, 9), it8('N', 250, 490, 9),
+    it8('26/11/2026', 290, 490, 9), it8('0000007-8', 420, 490, 9),
+    it8('Uso do banco', 40, 480), it8('Carteira', 120, 480), it8('Espécie', 160, 480), it8('Seu número', 290, 480),
+    it8('1', 120, 470, 9), it8('R$', 160, 470, 9), it8('PED-120', 290, 470, 9)
+  ];
+  it('lê nº do documento, seu número, nosso número, carteira e data do documento', () => {
+    const h = extractBoletoHints('', items);
+    expect(h).toMatchObject({ documentNumber: '000068', yourNumber: 'PED-120', ourNumber: '0000007-8', wallet: '1', issueDate: '2026-11-26' });
+  });
+  it('valor na mesma linha do rótulo', () => {
+    expect(extractBoletoHints('', [it8('Seu Número:', 40, 300), it8('ABC123', 90, 300, 9)]).yourNumber).toBe('ABC123');
+    expect(extractBoletoHints('', [it8('Nº Documento: 77', 40, 300)]).documentNumber).toBe('77');
+  });
+  it('não confunde o rótulo vizinho com o valor', () => {
+    expect(extractBoletoHints('', [it8('Seu número', 40, 300), it8('Vencimento', 40, 290)]).yourNumber).toBeNull();
+  });
+  it('texto corrido (sem posição) com "Nº Documento"', () => {
+    expect(extractBoletoHints('Nº Documento 000068 Seu Número PED-9').documentNumber).toBe('000068');
+    expect(extractBoletoHints('Nº Documento 000068 Seu Número PED-9').yourNumber).toBe('PED-9');
+  });
+});

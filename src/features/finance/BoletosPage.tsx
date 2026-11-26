@@ -15,7 +15,7 @@ import { ReceivableStatusBadge } from './ReceivableStatusBadge';
 import { BANKS, BoletoError, extractBoletoHints, findBoletoInText, parseBoleto, type BoletoInfo } from '@/domain/boleto';
 import { formatDocument } from '@/domain/documents';
 import { plannedProtestDate } from '@/domain/collections';
-import { extractPdfText } from '@/lib/pdfText';
+import { extractPdf } from '@/lib/pdfText';
 
 /** Boletos emitidos no banco e cadastrados manualmente. Sem integração bancária, NADA é emitido pelo sistema. */
 export function BoletosPage() {
@@ -119,7 +119,7 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
     if (file.size > 15 * 1024 * 1024) return toast('PDF maior que 15 MB.', 'danger');
     setBusy('pdf');
     try {
-      const text = await extractPdfText(file);
+      const { text, items } = await extractPdf(file);
       const b = findBoletoInText(text, todaySP());
       setPdf(file);
       if (!b) {
@@ -127,8 +127,15 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
       } else {
         apply(b, 'PDF lido');
       }
-      const hints = extractBoletoHints(text);
-      setV((s) => ({ ...s, our_number: b?.ourNumber ?? (s.our_number || hints.ourNumber || ''), wallet: b?.wallet ?? (s.wallet || hints.wallet || ''), document_number: s.document_number || hints.documentNumber || '' }));
+      const hints = extractBoletoHints(text, items);
+      setV((s) => ({
+        ...s, our_number: b?.ourNumber ?? (hints.ourNumber || s.our_number), wallet: b?.wallet ?? (hints.wallet || s.wallet),
+        document_number: hints.documentNumber || s.document_number, your_number: hints.yourNumber || s.your_number,
+        issue_date: hints.issueDate || s.issue_date
+      }));
+      const found = [hints.documentNumber && 'nº do documento', hints.yourNumber && 'seu número', hints.issueDate && 'data do documento'].filter(Boolean);
+      const notFound = [!hints.documentNumber && 'nº do documento', !hints.yourNumber && 'seu número'].filter(Boolean);
+      if (found.length || notFound.length) toast(`${found.length ? `Lido do PDF: ${found.join(', ')}.` : ''}${notFound.length ? ` Não encontrado no PDF: ${notFound.join(', ')} — preencha se o boleto tiver.` : ''}`.trim(), notFound.length ? 'warning' : 'success');
       // Pagador: o CPF/CNPJ do boleto que não é o da própria empresa (beneficiária) e que existe no cadastro.
       const own = String(company.data?.rows[0]?.document ?? '');
       const match = (customers.data?.rows ?? []).find((c) => c.document && hints.documents.includes(String(c.document)) && String(c.document) !== own);
