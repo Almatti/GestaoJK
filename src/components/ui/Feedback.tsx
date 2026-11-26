@@ -73,12 +73,23 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
 }
 
 /** Converte erros técnicos (Postgres/Supabase/rede) em mensagens compreensíveis. */
+/** Nomes amigáveis de colunas que aparecem em mensagens do banco. */
+const FIELD_LABELS: Record<string, string> = {
+  percent_event: 'Crédito em eventos (%)', percent_fixed: 'Crédito em pontos fixos (%)', fixed_per_order: 'Valor fixo por pedido', opening_debt: 'Saldo devedor inicial',
+  name: 'Nome', amount: 'Valor', due_date: 'Vencimento', quantity: 'Quantidade', liters: 'Litros', customer_id: 'Cliente'
+};
+
 export function friendlyError(error: unknown): string {
   const e = error as { message?: string; code?: string; details?: string } | null;
   const msg = e?.message ?? String(error ?? 'Erro desconhecido');
   if (e?.code === '42501' || /permission denied|Permissão negada|row-level security/i.test(msg)) return 'Você não tem permissão para esta ação. Fale com um administrador.';
   if (e?.code === '23505' || /duplicate key/i.test(msg)) return 'Já existe um registro com estes dados (duplicidade).';
   if (e?.code === '23P01' || /conflicting key value violates exclusion/i.test(msg)) return 'Conflito de agenda ou vigência: já existe um registro no mesmo período.';
+  if (e?.code === '23502' || /null value in column/i.test(msg)) {
+    const col = /column "([^"]+)"/.exec(msg)?.[1];
+    return `Preencha o campo obrigatório${col ? ` "${FIELD_LABELS[col] ?? col.replace(/_/g, ' ')}"` : ''} (pode ser 0) e salve novamente.`;
+  }
+  if (e?.code === '23514' || /violates check constraint/i.test(msg)) return 'Algum valor está fora do permitido (ex.: percentual acima de 100 ou documento em formato inválido). Revise os campos.';
   if (e?.code === '23503') return 'Este registro está vinculado a outros e não pode ser alterado desta forma.';
   if (/Failed to fetch|NetworkError|network/i.test(msg)) return 'Sem conexão com o servidor. Verifique a internet e tente novamente — nada foi salvo.';
   return msg.replace(/^FALHOU: /, '');

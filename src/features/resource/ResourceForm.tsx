@@ -122,6 +122,8 @@ export function ResourceForm({ def, row, open, onClose, onSaved }: { def: Resour
         if (f.cnpjLookup && typeof dbValues[f.name] === 'string') dbValues[f.name] = String(dbValues[f.name]).toUpperCase().replace(/[^0-9A-Z]/g, '') || null;
       }
       if (cnpjSnapshot) dbValues = { ...dbValues, ...cnpjSnapshot };
+      // Novo cadastro: campos deixados em branco ficam com o valor padrão do banco (ex.: percentuais = 0).
+      if (!id) dbValues = Object.fromEntries(Object.entries(dbValues).filter(([, v]) => v !== null));
       if (def.beforeSave) dbValues = def.beforeSave(dbValues, !id);
       const saved = (await save.mutateAsync({ id, values: dbValues })) as Row;
       clearDraft();
