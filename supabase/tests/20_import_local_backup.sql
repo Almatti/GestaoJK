@@ -69,3 +69,14 @@ select t_expect_error($$select create_boleto(null, null, '{"due_date":"2026-12-1
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
 select t_expect_error($$select create_boleto(null, null, '{"due_date":"2026-12-10","original_amount":"10"}'::jsonb)$$, 'técnico não cadastra boleto');
 reset role;
+-- Feriados e data prevista de protesto (3 dias úteis)
+select t_assert((select count(*) >= 13 from holidays where extract(year from day) = 2026), 'feriados nacionais de 2026 cadastrados');
+select t_assert(exists (select 1 from holidays where day = '2026-04-03') and exists (select 1 from holidays where day = '2026-02-17'), 'Sexta-feira Santa e Carnaval 2026 corretos');
+update collection_rules set protest_after_days = 3, protest_day_count = 'uteis' where customer_id is null;
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+select t_assert(planned_protest_date((select id from customers where name = 'Bar Teste Importação'), '2026-12-01') = '2026-12-04', '3 dias úteis após 01/12/2026 = 04/12/2026');
+select t_assert(planned_protest_date((select id from customers where name = 'Bar Teste Importação'), '2026-12-23') = '2026-12-29', 'pula fim de semana e Natal');
+create temp table bol2 as select create_boleto((select id from customers where name = 'Bar Teste Importação'), null, '{"due_date":"2026-12-01","original_amount":"99","our_number":"BOL-T3","bank_code":"756"}'::jsonb) r;
+select t_assert((select planned_protest_date = '2026-12-04' from boletos where our_number = 'BOL-T3'), 'boleto sem data de protesto recebe a data pela regra');
+reset role;

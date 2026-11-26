@@ -75,3 +75,14 @@ describe('pagamentos', () => {
     expect(r.remainderCents).toBe(0);
   });
 });
+
+describe('data prevista de encaminhamento a protesto', () => {
+  it('3 dias úteis após o vencimento (pula fim de semana e feriado)', async () => {
+    const { plannedProtestDate } = await import('./collections');
+    expect(plannedProtestDate('2026-12-01', { protestAfterDays: 3, protestDayCount: 'uteis' })).toBe('2026-12-04');
+    expect(plannedProtestDate('2026-12-03', { protestAfterDays: 3, protestDayCount: 'uteis' })).toBe('2026-12-08');
+    expect(plannedProtestDate('2026-12-23', { protestAfterDays: 3, protestDayCount: 'uteis' }, new Set(['2026-12-25']))).toBe('2026-12-29');
+    expect(plannedProtestDate('2026-12-01', { protestAfterDays: 3, protestDayCount: 'corridos' })).toBe('2026-12-04');
+    expect(plannedProtestDate('2026-12-01', { protestAfterDays: 0, protestDayCount: 'uteis' })).toBeNull();
+  });
+});

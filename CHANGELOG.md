@@ -4,6 +4,8 @@ Formato baseado em Keep a Changelog; versões semânticas.
 
 ## [0.3.0] — 26/11/2026
 ### Adicionado
+- Boletos: carteira e nosso número lidos do código de barras (Sicoob, Itaú, Bradesco, BB, Santander, Caixa,
+  Sicredi); data prevista de protesto calculada pela regra (ex.: 3 dias úteis); feriados nacionais 2025–2030.
 - Boletos: leitura da linha digitável/código de barras (FEBRABAN, com dígitos verificadores, fator de
   vencimento 2025) e importação do PDF (texto lido no navegador, arquivo anexado); vínculo com cliente e criação
   automática do título (`create_boleto`, transacional).

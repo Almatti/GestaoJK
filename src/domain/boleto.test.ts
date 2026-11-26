@@ -71,3 +71,27 @@ describe('boleto (FEBRABAN)', () => {
     expect(findBoletoInText('sem código nenhum', ref)).toBeNull();
   });
 });
+
+describe('carteira e nosso número pelo código de barras', () => {
+  const ref = '2026-11-26';
+  const mk = (bank: string, free: string) => { const body = `${bank}9${'1656'}${'0000010000'}${free}`; return `${body.slice(0, 4)}${mod11Bank(body)}${body.slice(4)}`; };
+  it('Sicoob: carteira 1 e nosso número com DV', () => {
+    const b = parseBoleto(mk('756', '1' + '1234' + '01' + '7654321' + '00000078' + '001'), ref);
+    expect(b.wallet).toBe('1');
+    expect(b.ourNumber).toBe('0000007-8');
+  });
+  it('Itaú, Bradesco, Banco do Brasil, Santander, Caixa e Sicredi', () => {
+    expect(parseBoleto(mk('341', '109' + '12345678' + '9' + '0001' + '12345' + '6' + '000'), ref)).toMatchObject({ wallet: '109', ourNumber: '109/12345678-9' });
+    expect(parseBoleto(mk('237', '1234' + '09' + '12345678901' + '1234567' + '0'), ref)).toMatchObject({ wallet: '09', ourNumber: '12345678901' });
+    expect(parseBoleto(mk('001', '000000' + '12345671234567890' + '17'), ref)).toMatchObject({ wallet: '17', ourNumber: '12345671234567890' });
+    expect(parseBoleto(mk('033', '9' + '1234567' + '1234567890123' + '0' + '101'), ref)).toMatchObject({ wallet: '101', ourNumber: '1234567890123' });
+    expect(parseBoleto(mk('104', '123456' + '7' + '000' + '1' + '000' + '4' + '000000123' + '5'), ref)).toMatchObject({ wallet: 'RG', ourNumber: '14000000000000123' });
+    expect(parseBoleto(mk('748', '3' + '1' + '262012345' + '0700' + '01' + '12345' + '1' + '0' + '5'), ref)).toMatchObject({ wallet: '1', ourNumber: '26/201234-5' });
+  });
+  it('banco sem layout conhecido não inventa valores', () => {
+    expect(parseBoleto(mk('077', '0'.repeat(25)), ref)).toMatchObject({ wallet: null, ourNumber: null });
+  });
+  it('carteira no texto do PDF', () => {
+    expect(extractBoletoHints('Carteira 109 Espécie R$').wallet).toBe('109');
+  });
+});

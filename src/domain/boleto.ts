@@ -27,6 +27,41 @@ export interface BoletoInfo {
   dueDate: string | null;
   /** Campo livre do banco (25 dígitos) — contém nosso número/carteira conforme o banco. */
   freeField: string;
+  /** Carteira e nosso número extraídos do campo livre (bancos com layout conhecido; null nos demais). */
+  wallet: string | null;
+  ourNumber: string | null;
+}
+
+/**
+ * Layout do campo livre (posições 20 a 44 do código de barras) dos principais bancos, conforme os manuais de
+ * cobrança de cada um. Bancos não listados: carteira e nosso número vêm do PDF ou são digitados.
+ */
+export function bankFreeFieldData(bankCode: string, free: string): { wallet: string | null; ourNumber: string | null } {
+  if (free.length !== 25) return { wallet: null, ourNumber: null };
+  switch (bankCode) {
+    case '756': { // Sicoob: carteira(1) cooperativa(4) modalidade(2) cliente(7) nosso número(7+DV) parcela(3)
+      const nn = free.slice(14, 22);
+      return { wallet: free[0]!, ourNumber: `${nn.slice(0, 7)}-${nn[7]}` };
+    }
+    case '341': // Itaú: carteira(3) nosso número(8) DAC(1) agência(4) conta(5) DAC(1) 000
+      return { wallet: free.slice(0, 3), ourNumber: `${free.slice(0, 3)}/${free.slice(3, 11)}-${free[11]}` };
+    case '237': // Bradesco: agência(4) carteira(2) nosso número(11) conta(7) 0
+      return { wallet: free.slice(4, 6), ourNumber: free.slice(6, 17) };
+    case '001': // Banco do Brasil: convênio de 7 dígitos (000000 + nosso número 17 + carteira 2) ou convênio 4/6
+      return free.startsWith('000000') ? { wallet: free.slice(23, 25), ourNumber: free.slice(6, 23) } : { wallet: free.slice(23, 25), ourNumber: free.slice(0, 11) };
+    case '033': // Santander: 9 beneficiário(7) nosso número(13) IOF(1) carteira(3)
+      return free[0] === '9' ? { wallet: free.slice(22, 25), ourNumber: free.slice(8, 21) } : { wallet: null, ourNumber: null };
+    case '104': { // Caixa (SIGCB): beneficiário(6) DV nn(3) constante1 nn(3) constante2 nn(9) DV
+      const c1 = free[10]!;
+      return { wallet: c1 === '1' ? 'RG' : c1 === '2' ? 'SR' : c1, ourNumber: `${c1}${free[14]}${free.slice(7, 10)}${free.slice(11, 14)}${free.slice(15, 24)}` };
+    }
+    case '748': { // Sicredi: tipo(1) carteira(1) nosso número(9) agência(4) posto(2) beneficiário(5) ...
+      const nn = free.slice(2, 11);
+      return { wallet: free[1]!, ourNumber: `${nn.slice(0, 2)}/${nn.slice(2, 8)}-${nn[8]}` };
+    }
+    default:
+      return { wallet: null, ourNumber: null };
+  }
 }
 
 export class BoletoError extends Error {}
@@ -117,7 +152,8 @@ function bankFromBarcode(bar: string, refDate: string, line?: string): BoletoInf
     bankName: BANKS[bar.slice(0, 3)] ?? null,
     amount: cents > 0 ? cents / 100 : null,
     dueDate: dueDateFromFactor(Number(bar.slice(5, 9)), refDate),
-    freeField: free
+    freeField: free,
+    ...bankFreeFieldData(bar.slice(0, 3), free)
   };
 }
 
@@ -137,7 +173,9 @@ function collectionFromBarcode(bar: string, line?: string): BoletoInfo {
     bankName: null,
     amount: realValue && cents > 0 ? cents / 100 : null,
     dueDate: null,
-    freeField: bar.slice(15)
+    freeField: bar.slice(15),
+    wallet: null,
+    ourNumber: null
   };
 }
 
@@ -192,6 +230,7 @@ export function findBoletoInText(text: string, refDate: string): BoletoInfo | nu
 
 export interface BoletoPdfHints {
   documents: string[];
+  wallet: string | null;
   ourNumber: string | null;
   documentNumber: string | null;
 }
@@ -209,6 +248,7 @@ export function extractBoletoHints(text: string): BoletoPdfHints {
   };
   return {
     documents,
+    wallet: after(/Carteira[:\s]*([0-9A-Z]{1,3})\b/i),
     ourNumber: after(/Nosso\s*N[úu]mero[:\s]*([0-9][0-9./-]{2,30}[0-9])/i),
     documentNumber: after(/N[úu]m(?:ero|\.)?\s*(?:do\s*)?Documento[:\s]*([0-9A-Z][0-9A-Z./-]{0,24})/i)
   };

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Copy, ScanLine, FileUp } from 'lucide-react';
 import { useList, db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
@@ -14,6 +14,7 @@ import { formatDateBR, todaySP } from '@/domain/dates';
 import { ReceivableStatusBadge } from './ReceivableStatusBadge';
 import { BANKS, BoletoError, extractBoletoHints, findBoletoInText, parseBoleto, type BoletoInfo } from '@/domain/boleto';
 import { formatDocument } from '@/domain/documents';
+import { plannedProtestDate } from '@/domain/collections';
 import { extractPdfText } from '@/lib/pdfText';
 
 /** Boletos emitidos no banco e cadastrados manualmente. Sem integração bancária, NADA é emitido pelo sistema. */
@@ -74,6 +75,20 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
   const [pdf, setPdf] = useState<File | null>(null);
   const [busy, setBusy] = useState<'pdf' | 'save' | null>(null);
   const pdfInput = useRef<HTMLInputElement>(null);
+  const rules = useList<Row>('collection_rules', { range: [0, 499] });
+  const holidayRows = useList<Row>('holidays', { select: 'day', range: [0, 1999] });
+  const [protestTouched, setProtestTouched] = useState(false);
+  // Regra vigente: a específica do cliente (se houver) ou a global.
+  const today = todaySP();
+  const vigente = (r: Row) => String(r.valid_from ?? '') <= today && (!r.valid_to || String(r.valid_to) >= today);
+  const rule = (rules.data?.rows ?? []).filter(vigente).sort((a, b) => String(b.valid_from).localeCompare(String(a.valid_from)))
+    .find((r) => customerId && r.customer_id === customerId) ?? (rules.data?.rows ?? []).filter((r) => !r.customer_id && vigente(r))[0];
+  const protestRule = rule ? { protestAfterDays: Number(rule.protest_after_days ?? 0), protestDayCount: (rule.protest_day_count === 'uteis' ? 'uteis' : 'corridos') as 'uteis' | 'corridos' } : null;
+  const holidaySet = new Set((holidayRows.data?.rows ?? []).map((h) => String(h.day)));
+  const suggestedProtest = v.due_date && protestRule ? plannedProtestDate(v.due_date, protestRule, holidaySet) : null;
+  useEffect(() => {
+    if (!protestTouched) setV((s) => ({ ...s, planned_protest_date: suggestedProtest ?? '' }));
+  }, [suggestedProtest, protestTouched]);
   const toast = useToast();
   const invalidate = useInvalidateAll();
   const set = (k: keyof BoletoFields) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV((s) => ({ ...s, [k]: e.target.value }));
@@ -82,7 +97,9 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
   const apply = (b: BoletoInfo, origin: string) => {
     setV((s) => ({
       ...s, bank_code: b.kind === 'bancario' ? b.bankCode : s.bank_code, digitable_line: b.digitableLine, barcode: b.barcode,
-      due_date: b.dueDate ?? s.due_date, original_amount: b.amount != null ? b.amount.toFixed(2) : s.original_amount
+      due_date: b.dueDate ?? s.due_date, original_amount: b.amount != null ? b.amount.toFixed(2) : s.original_amount,
+      // Carteira e nosso número vêm do campo livre do código (layout do banco); prevalecem sobre o texto do PDF.
+      wallet: b.wallet ?? s.wallet, our_number: b.ourNumber ?? s.our_number
     }));
     setCode(b.digitableLine);
     const missing = [b.amount == null && 'valor', !b.dueDate && 'vencimento'].filter(Boolean).join(' e ');
@@ -111,7 +128,7 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
         apply(b, 'PDF lido');
       }
       const hints = extractBoletoHints(text);
-      setV((s) => ({ ...s, our_number: s.our_number || hints.ourNumber || '', document_number: s.document_number || hints.documentNumber || '' }));
+      setV((s) => ({ ...s, our_number: b?.ourNumber ?? (s.our_number || hints.ourNumber || ''), wallet: b?.wallet ?? (s.wallet || hints.wallet || ''), document_number: s.document_number || hints.documentNumber || '' }));
       // Pagador: o CPF/CNPJ do boleto que não é o da própria empresa (beneficiária) e que existe no cadastro.
       const own = String(company.data?.rows[0]?.document ?? '');
       const match = (customers.data?.rows ?? []).find((c) => c.document && hints.documents.includes(String(c.document)) && String(c.document) !== own);
@@ -201,7 +218,11 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
           <TextInput label="Emissão" type="date" value={v.issue_date} onChange={set('issue_date')} />
           <TextInput label="Vencimento" type="date" required value={v.due_date} onChange={set('due_date')} />
           <TextInput label="Valor original (R$)" type="number" step="0.01" required value={v.original_amount} onChange={set('original_amount')} />
-          <TextInput label="Encaminhamento a protesto previsto (data interna)" type="date" value={v.planned_protest_date} onChange={set('planned_protest_date')} hint="Não é a data efetiva do protesto." />
+          <TextInput label="Encaminhamento a protesto previsto (data interna)" type="date" value={v.planned_protest_date}
+            onChange={(e) => { setProtestTouched(true); setV((s) => ({ ...s, planned_protest_date: e.target.value })); }}
+            hint={protestRule && protestRule.protestAfterDays > 0
+              ? `Calculado: ${protestRule.protestAfterDays} dia(s) ${protestRule.protestDayCount === 'uteis' ? 'úteis' : 'corridos'} após o vencimento (regra de cobrança${rule?.customer_id ? ' do cliente' : ''}${protestRule.protestDayCount === 'uteis' ? ', sem fins de semana e feriados cadastrados' : ''}). Não é a data efetiva do protesto.${protestTouched && suggestedProtest && v.planned_protest_date !== suggestedProtest ? ` Sugerido: ${formatDateBR(suggestedProtest)}.` : ''}`
+              : 'Sem prazo de protesto na regra de cobrança (Financeiro → Cobranças). Não é a data efetiva do protesto.'} />
           <TextInput wrapperClassName="sm:col-span-2" label="Linha digitável" value={v.digitable_line} onChange={set('digitable_line')} />
           <TextInput wrapperClassName="sm:col-span-2" label="Código de barras" value={v.barcode} onChange={set('barcode')} />
         </div>
