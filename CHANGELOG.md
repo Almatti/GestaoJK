@@ -2,6 +2,13 @@
 
 Formato baseado em Keep a Changelog; versões semânticas.
 
+## [0.2.0] — 26/11/2026
+### Adicionado
+- **Modo local**: uso real imediato sem servidor (dados no navegador, começa vazio), login por nome + PIN opcional,
+  backup/restauração completos por arquivo, lembrete de backup, aviso permanente.
+- RPCs do modo local: estorno, renegociação, recebimento de compras, fechamento/estorno de parceiros, reservas de equipamentos.
+- Publicação na Vercel (`vercel.json`), roteamento por hash e build estático opcional (`npm run build:local`).
+
 ## [0.1.0] — 26/11/2026
 ### Adicionado
 - Fundação: Vite 8 + React 19 + TypeScript strict + Tailwind 4 (identidade Tangerine Rush), PWA instalável.

@@ -11,3 +11,4 @@ test-results
 backups/*.sql
 backups/*.gz
 .DS_Store
+dist-local

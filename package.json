@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:local": "tsc -b && VITE_APP_MODE=local VITE_ROUTER=hash VITE_PWA=off vite build --base=./ --outDir dist-local",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",

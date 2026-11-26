@@ -11,6 +11,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      disable: process.env.VITE_PWA === 'off',
       registerType: 'prompt',
       includeAssets: ['favicon.svg', 'icons/*.png'],
       manifest: {

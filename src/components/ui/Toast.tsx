@@ -17,7 +17,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-24 z-[100] flex flex-col items-center gap-2 px-4 lg:bottom-6 lg:items-end">
         {items.map((t) => (
-          <div key={t.id} className="glass pointer-events-auto flex max-w-md items-center gap-3 rounded-2xl px-4 py-3 text-sm animate-rise">
+          <div key={t.id} className="surface pointer-events-auto flex max-w-md items-center gap-3 rounded-2xl px-4 py-3 text-sm animate-rise">
             <Badge tone={t.tone}>{t.tone === 'success' ? 'Sucesso' : t.tone === 'danger' ? 'Erro' : t.tone === 'warning' ? 'Atenção' : 'Info'}</Badge>
             <span>{t.message}</span>
           </div>

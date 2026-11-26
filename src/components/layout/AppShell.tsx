@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { clsx } from 'clsx';
-import { Bell, ChevronsLeft, ChevronsRight, LogOut, Menu, Plus, Search, WifiOff, X, FlaskConical } from 'lucide-react';
+import { Bell, ChevronsLeft, ChevronsRight, LogOut, Menu, Plus, Search, WifiOff, X, FlaskConical, HardDrive } from 'lucide-react';
+import { table as localTable } from '@/data/demo/store';
 import { NAVIGATION, MOBILE_NAV } from '@/config/navigation';
 import { useAuth } from '@/features/auth/AuthContext';
 import { ROLES } from '@/domain/permissions';
@@ -36,6 +37,31 @@ const readPref = (k: string, d: boolean) => {
   }
 };
 
+/** Modo local: lembra de fazer backup (nunca feito ou há mais de 7 dias) e pede armazenamento persistente. */
+function useBackupReminder(mode: string) {
+  const [due, setDue] = useState(false);
+  useEffect(() => {
+    if (mode !== 'local') return;
+    navigator.storage?.persist?.().catch(() => undefined);
+    const check = () => {
+      try {
+        const last = localTable('meta')[0]?.last_backup_at as string | null | undefined;
+        setDue(!last || Date.now() - Date.parse(last) > 7 * 864e5);
+      } catch {
+        setDue(true);
+      }
+    };
+    check();
+    const t = setInterval(check, 60_000);
+    addEventListener('jk-backup', check);
+    return () => {
+      clearInterval(t);
+      removeEventListener('jk-backup', check);
+    };
+  }, [mode]);
+  return due;
+}
+
 export function AppShell() {
   const { profile, can, signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(() => readPref('jk-sidebar-collapsed', false));
@@ -44,7 +70,9 @@ export function AppShell() {
   const online = useOnline();
   const location = useLocation();
   const navigate = useNavigate();
-  const demo = getDataClient().mode === 'demo';
+  const mode = getDataClient().mode;
+  const demo = mode === 'demo';
+  const backupDue = useBackupReminder(mode);
   const notif = useList('notifications', { filters: [{ column: 'status', op: 'eq', value: 'nao_lida' }], count: true, range: [0, 0] }, { refetchInterval: 60_000 });
 
   useEffect(() => setMobileOpen(false), [location.pathname, location.search]);
@@ -138,7 +166,13 @@ export function AppShell() {
             <FlaskConical className="size-4" aria-hidden /> AMBIENTE DE DEMONSTRAÇÃO — dados fictícios, salvos apenas neste navegador. Não use para dados reais.
           </div>
         )}
-        {!online && (
+        {mode === 'local' && (
+          <div className={`flex flex-wrap items-center justify-center gap-x-2 px-4 py-1.5 text-center text-xs font-semibold ${backupDue ? 'bg-warning-700 text-white' : 'bg-cocoa-900 text-cream-100'}`}>
+            <HardDrive className="size-4" aria-hidden /> MODO LOCAL — os dados ficam salvos somente neste navegador/dispositivo.
+            <NavLink to="/admin/backups" className="underline">{backupDue ? 'Faça um backup agora' : 'Backups'}</NavLink>
+          </div>
+        )}
+        {!online && mode === 'supabase' && (
           <div role="alert" className="flex items-center justify-center gap-2 bg-danger-700 px-4 py-1.5 text-xs font-semibold text-white">
             <WifiOff className="size-4" aria-hidden /> Sem conexão. Alterações não serão salvas até a conexão voltar.
           </div>

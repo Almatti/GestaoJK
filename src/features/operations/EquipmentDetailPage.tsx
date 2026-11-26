@@ -17,6 +17,7 @@ import { formatDateBR, formatDateTimeBR, todaySP, diffDays } from '@/domain/date
 import { formatReais } from '@/domain/money';
 import { printDocument, escHtml } from '@/lib/export';
 import { Attachments } from '@/components/ui/Attachments';
+import { appUrl } from '@/config/env';
 
 /** Ficha patrimonial. O QR Code aponta para esta página, que exige login e permissão. */
 export function EquipmentDetailPage() {
@@ -28,7 +29,7 @@ export function EquipmentDetailPage() {
   const reservations = useList<Row>('equipment_reservations', { select: '*,customer:customers(name)', filters: [{ column: 'equipment_id', op: 'eq', value: id }, { column: 'status', op: 'eq', value: 'ativa' }] });
   const [qr, setQr] = useState('');
   const [moving, setMoving] = useState(false);
-  const url = `${location.origin}/equipamentos/${id}`;
+  const url = appUrl(`/equipamentos/${id}`);
   useEffect(() => {
     QRCode.toDataURL(url, { margin: 1, width: 220, color: { dark: '#69351F', light: '#FFFFFF' } }).then(setQr);
   }, [url]);

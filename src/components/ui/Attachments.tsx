@@ -18,7 +18,7 @@ export function Attachments({ entityType, entityId, title = 'Documentos e anexos
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const invalidate = useInvalidateAll();
-  const demo = db().mode === 'demo';
+  const demo = db().mode !== 'supabase';
 
   const upload = async (file: File) => {
     if (file.size > MAX_BYTES) return toast('Arquivo maior que 15 MB.', 'danger');
@@ -47,7 +47,7 @@ export function Attachments({ entityType, entityId, title = 'Documentos e anexos
 
   return (
     <Card opaque title={title} action={<><input ref={input} type="file" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} /><Button size="sm" variant="soft" icon={<Upload className="size-4" />} loading={busy} disabled={demo} onClick={() => input.current?.click()}>Anexar</Button></>}>
-      {demo && <div className="mb-3"><Alert tone="info">Envio de arquivos disponível apenas com o Supabase configurado.</Alert></div>}
+      {demo && <div className="mb-3"><Alert tone="info">Envio de arquivos ficará disponível quando o servidor (Supabase) for configurado. Por enquanto, guarde os arquivos na pasta da empresa e anote a referência nas observações.</Alert></div>}
       {(q.data?.rows ?? []).length === 0 ? <EmptyState icon={<Paperclip className="size-7" />} title="Nenhum arquivo" description="Contratos, comprovantes, fotos e documentos ficam em armazenamento privado." /> : (
         <ul className="divide-y divide-tangerine-100">{q.data!.rows.map((a) => (
           <li key={String(a.id)} className="flex items-center gap-3 py-2.5 text-sm">

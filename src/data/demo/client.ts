@@ -1,7 +1,8 @@
 import { isValidCnpj, isValidCpf, normalizeCnpj } from '@/domain/documents';
 import { todaySP } from '@/domain/dates';
 import type { DataClient, ListOptions, Row, SessionUser } from '../types';
-import { loadDb, nowIso, resetDb, saveDb, table, uid } from './store';
+import { loadDb, nowIso, resetDb, saveDb, setStoreKey, table, uid } from './store';
+import { seedLocal } from './seedLocal';
 import { seed } from './seed';
 import { VIEWS } from './views';
 import { runQuery } from './query';
@@ -46,7 +47,7 @@ function defaults(name: string): Row {
 
 const NUMBERED: Record<string, string> = { orders: 'number', service_orders: 'number', purchases: 'number', customers: 'code' };
 const listeners = new Set<(u: SessionUser | null) => void>();
-const USER_KEY = 'jk-demo-session';
+let USER_KEY = 'jk-demo-session';
 
 function resolve(name: string): Row[] {
   return VIEWS[name]?.() ?? table(name);
@@ -76,10 +77,15 @@ function afterWrite(name: string, row: Row) {
   if (name === 'orders') recalcOrder(String(row.id));
 }
 
-export function createDemoDataClient(): DataClient {
-  loadDb(seed);
+export function createDemoDataClient(mode: 'demo' | 'local' = 'demo'): DataClient {
+  if (mode === 'local') {
+    setStoreKey('jk-local-db-v1');
+    USER_KEY = 'jk-local-session';
+    loadDb(() => seedLocal());
+  } else loadDb(seed);
+  const userId = mode === 'local' ? 'local-user' : 'demo-user';
   return {
-    mode: 'demo',
+    mode,
     async list<T>(name: string, opts: ListOptions = {}) {
       const r = runQuery(resolve(name), opts, resolve);
       return { rows: structuredClone(r.rows) as T[], count: r.count };
@@ -134,8 +140,17 @@ export function createDemoDataClient(): DataClient {
           return null;
         }
       },
-      async signIn(email) {
-        const u = { id: 'demo-user', email: email || 'demo@jkchopp.invalid' };
+      async signIn(email, password) {
+        if (mode === 'local') {
+          const p = table('profiles').find((x) => x.id === userId);
+          if (p && email && !p.full_name) p.full_name = email;
+          const pin = table('meta')[0]?.pin_hash as string | undefined;
+          if (pin) {
+            const h = await sha256(String(password ?? ''));
+            if (h !== pin) throw new Error('PIN incorreto.');
+          }
+        }
+        const u = { id: userId, email: email || (mode === 'local' ? 'local' : 'demo@jkchopp.invalid') };
         localStorage.setItem(USER_KEY, JSON.stringify(u));
         listeners.forEach((l) => l(u));
       },
@@ -163,6 +178,11 @@ export function createDemoDataClient(): DataClient {
       }
     }
   };
+}
+
+export async function sha256(text: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`jk-chopp:${text}`));
+  return Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export { resetDb as resetDemoDb };

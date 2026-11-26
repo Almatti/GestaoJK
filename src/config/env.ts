@@ -15,10 +15,24 @@ export const env = {
   appName: 'JK CHOPP GESTÃO'
 } as const;
 
-export function resolveDataMode(): 'supabase' | 'demo' | 'unconfigured' {
+/** URL absoluta de uma rota interna (considera o roteamento por hash usado na hospedagem estática). */
+export function appUrl(path: string): string {
+  if (import.meta.env.VITE_ROUTER === 'hash') return `${location.href.split('#')[0]}#${path}`;
+  return `${location.origin}${path}`;
+}
+
+export type DataMode = 'supabase' | 'demo' | 'local' | 'unconfigured';
+
+/**
+ * 'local' = uso real sem servidor: dados da empresa salvos apenas neste navegador (sem dados fictícios),
+ * com backup/restauração por arquivo e migração futura para o Supabase.
+ */
+export function resolveDataMode(): DataMode {
   if (env.appMode === 'demo') return 'demo';
   if (env.isSupabaseConfigured) return 'supabase';
+  if (env.appMode === 'local') return 'local';
   try {
+    if (localStorage.getItem('jk-local-enabled') === '1') return 'local';
     if (localStorage.getItem('jk-demo-enabled') === '1') return 'demo';
   } catch {
     /* armazenamento indisponível */

@@ -9,7 +9,7 @@ export function getDataClient(): DataClient {
   if (instance) return instance;
   const mode = resolveDataMode();
   if (mode === 'unconfigured') throw new Error('Supabase não configurado');
-  instance = mode === 'supabase' ? createSupabaseDataClient() : createDemoDataClient();
+  instance = mode === 'supabase' ? createSupabaseDataClient() : createDemoDataClient(mode);
   return instance;
 }
 

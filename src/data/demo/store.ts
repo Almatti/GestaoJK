@@ -4,7 +4,32 @@
  */
 import type { Row } from '../types';
 
-const KEY = 'jk-demo-db-v1';
+let KEY = 'jk-demo-db-v1';
+
+/** Chave de armazenamento: 'jk-demo-db-v1' (demonstração) ou 'jk-local-db-v1' (uso real local). */
+export function setStoreKey(k: string) {
+  KEY = k;
+}
+
+export function exportDb(): Tables {
+  if (!db) throw new Error('Banco local não carregado');
+  return structuredClone(db);
+}
+
+/** Substitui todo o banco local pelo conteúdo de um backup. */
+export function importDb(data: Tables) {
+  db = structuredClone(data);
+  saveDb();
+}
+
+/** Tamanho aproximado ocupado (bytes). */
+export function dbSize(): number {
+  try {
+    return (localStorage.getItem(KEY) ?? '').length * 2;
+  } catch {
+    return 0;
+  }
+}
 export type Tables = Record<string, Row[]>;
 
 let db: Tables | null = null;
@@ -29,10 +54,12 @@ export function loadDb(seed: () => Tables): Tables {
 }
 
 export function saveDb(): void {
+  if (!db) return;
   try {
-    if (db) localStorage.setItem(KEY, JSON.stringify(db));
+    localStorage.setItem(KEY, JSON.stringify(db));
   } catch {
-    /* sem armazenamento: mantém em memória */
+    // Não silenciar no modo local: o usuário precisa saber que o dado NÃO foi gravado.
+    throw new Error('Não foi possível salvar no armazenamento deste navegador (espaço cheio ou bloqueado). Faça um backup em Administração → Backups.');
   }
 }
 

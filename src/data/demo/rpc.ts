@@ -2,7 +2,7 @@
  * RPCs do ambiente de demonstração. Reutilizam o domínio TypeScript. Em produção valem as funções SQL
  * (supabase/migrations/*_business_functions.sql), que são a fonte de verdade transacional.
  */
-import { addDays, diffDays, todaySP } from '@/domain/dates';
+import { addDays, addMonths, diffDays, todaySP } from '@/domain/dates';
 import { calculateCharges, type ChargeRules } from '@/domain/collections';
 import { toCents, fromCents } from '@/domain/money';
 import { renderTemplate } from '@/domain/messages';
@@ -223,6 +223,15 @@ export const DEMO_RPC: Record<string, (args: Record<string, unknown>) => unknown
       if (n(p?.available) < n(i.quantity)) fail(`Estoque disponível insuficiente (disponível ${n(p?.available)}, solicitado ${n(i.quantity)})`);
       table('stock_reservations').push({ id: uid(), stock_item_id: si.id, quantity: i.quantity, order_id: o.id, status: 'ativa', created_at: nowIso() });
     }
+    for (const eq of (a.p_equipment as string[] | undefined) ?? []) {
+      const start = String(o.delivery_date ?? o.order_date);
+      const end = o.pickup_date ? String(o.pickup_date) : '9999-12-31';
+      const clash = table('equipment_reservations').find((r) => r.equipment_id === eq && r.status === 'ativa' && String(r.starts_at).slice(0, 10) <= end && start <= String(r.ends_at ?? '9999-12-31').slice(0, 10));
+      if (clash) fail('Equipamento já reservado para outro compromisso no mesmo período');
+      table('equipment_reservations').push({ id: uid(), equipment_id: eq, customer_id: o.customer_id, order_id: o.id, starts_at: start, ends_at: o.pickup_date ?? null, status: 'ativa', created_at: nowIso() });
+      const e = table('equipment').find((x) => x.id === eq);
+      if (e && e.status === 'disponivel') e.status = 'reservado';
+    }
     const cond = table('commercial_conditions').find((c) => c.customer_id === o.customer_id);
     const term = n(cond?.payment_term_days ?? rule().default_term_days);
     const nInst = n(o.installments) || 1;
@@ -248,6 +257,14 @@ export const DEMO_RPC: Record<string, (args: Record<string, unknown>) => unknown
         table('inventory_movements').push({ id: uid(), stock_item_id: r.stock_item_id, movement_type: 'saida', quantity: -n(r.quantity), ref_type: 'order', ref_id: o.id, created_at: nowIso() });
         r.status = 'consumida';
       }
+      for (const res of table('equipment_reservations').filter((x) => x.order_id === o.id && x.status === 'ativa')) {
+        const e = table('equipment').find((x) => x.id === res.equipment_id);
+        if (!e) continue;
+        const to = o.kind === 'evento' ? 'em_evento' : 'em_ponto_fixo';
+        table('equipment_movements').push({ id: uid(), equipment_id: e.id, from_status: e.status, to_status: to, to_location: 'cliente', customer_id: o.customer_id, order_id: o.id, reason: 'Entrega do pedido', moved_at: nowIso() });
+        Object.assign(e, { status: to, customer_id: o.customer_id, location: 'cliente', custody_since: nowIso() });
+      }
+      table('deliveries').filter((d) => d.order_id === o.id && d.kind === 'entrega' && d.status !== 'cancelada').forEach((d) => Object.assign(d, { status: 'concluida', completed_at: nowIso() }));
     }
     table('order_status_history').push({ id: uid(), order_id: o.id, from_status: o.status, to_status: a.p_status, changed_at: nowIso() });
     o.status = a.p_status;
@@ -260,6 +277,11 @@ export const DEMO_RPC: Record<string, (args: Record<string, unknown>) => unknown
     table('stock_reservations').filter((r) => r.order_id === o.id && r.status === 'ativa').forEach((r) => (r.status = 'liberada'));
     table('receivables').filter((r) => r.order_id === o.id && r.status === 'em_aberto').forEach((r) => (r.status = 'cancelado'));
     table('deliveries').filter((d) => d.order_id === o.id).forEach((d) => (d.status = 'cancelada'));
+    for (const res of table('equipment_reservations').filter((x) => x.order_id === o.id && x.status === 'ativa')) {
+      res.status = 'cancelada';
+      const e = table('equipment').find((x) => x.id === res.equipment_id);
+      if (e && e.status === 'reservado') e.status = 'disponivel';
+    }
     Object.assign(o, { status: 'cancelado', cancelled_at: nowIso(), cancel_reason: a.p_reason });
     return null;
   },
@@ -363,6 +385,108 @@ export const DEMO_RPC: Record<string, (args: Record<string, unknown>) => unknown
     Object.assign(s, { scheduled_date: a.p_date, scheduled_time: a.p_time, status: 'agendada' });
     table('calendar_events').push({ id: uid(), title: `OS nº ${s.number}`, kind: 'visita_tecnica', starts_at: `${a.p_date}T${a.p_time ?? '09:00'}:00-03:00`, ref_type: 'service_order', ref_id: s.id, status: 'confirmado', priority: 'normal', created_at: nowIso() });
     return null;
+  },
+
+  reverse_payment: (a) => {
+    if (!String(a.p_reason ?? '').trim()) fail('Justificativa obrigatória');
+    const p = table('payments').find((x) => x.id === a.p_payment) ?? fail('Pagamento não encontrado');
+    if (p.reversed_at) fail('Pagamento já estornado');
+    for (const al of table('payment_allocations').filter((x) => x.payment_id === p.id && !x.reversed)) {
+      const target = al.receivable_id ? table('receivables').find((r) => r.id === al.receivable_id) : table('payables').find((r) => r.id === al.payable_id);
+      if (target) {
+        target.paid_amount = Math.round((n(target.paid_amount) - n(al.principal)) * 100) / 100;
+        target.status = n(target.paid_amount) <= 0 ? 'em_aberto' : 'parcialmente_pago';
+        target.paid_at = null;
+      }
+      al.reversed = true;
+    }
+    Object.assign(p, { reversed_at: nowIso(), reverse_reason: a.p_reason });
+    for (const t of table('financial_transactions').filter((x) => x.payment_id === p.id && ['recebimento', 'pagamento'].includes(String(x.kind))))
+      table('financial_transactions').push({ id: uid(), account_id: t.account_id, kind: 'estorno', amount: -n(t.amount), occurred_on: todaySP(), description: `Estorno: ${a.p_reason}`, payment_id: p.id, reconciled: false, created_at: nowIso() });
+    return null;
+  },
+
+  renegotiate_receivable: (a) => {
+    const r = table('receivables').find((x) => x.id === a.p_receivable) ?? fail('Título não encontrado');
+    if (!['em_aberto', 'parcialmente_pago'].includes(String(r.status))) fail('Título não pode ser renegociado');
+    if (!String(a.p_reason ?? '').trim()) fail('Justificativa obrigatória');
+    const nInst = Math.max(1, n(a.p_installments));
+    const totalC = toCents(n(a.p_new_total));
+    const base = Math.floor(totalC / nInst);
+    Object.assign(r, { status: 'renegociado', notes: `${r.notes ? `${r.notes}\n` : ''}Renegociado: ${a.p_reason}` });
+    table('message_queue').filter((m) => m.ref_id === r.id && ['gerada', 'aberta'].includes(String(m.status))).forEach((m) => Object.assign(m, { status: 'cancelada', cancel_reason: 'Título renegociado' }));
+    for (let i = 1; i <= nInst; i++)
+      table('receivables').push({ id: uid(), customer_id: r.customer_id, order_id: r.order_id, renegotiated_from: r.id, description: `Renegociação de "${r.description}" — ${i}/${nInst}`, installment_no: i, installment_count: nInst, competence_date: todaySP(), issue_date: todaySP(), due_date: addDays(String(a.p_first_due), (i - 1) * 30), amount: fromCents(base + (i === 1 ? totalC - base * nInst : 0)), paid_amount: 0, interest_amount: 0, fine_amount: 0, discount_amount: 0, status: 'em_aberto', payment_method: r.payment_method, category_id: r.category_id, created_at: nowIso() });
+    return nInst;
+  },
+
+  receive_purchase: (a) => {
+    const pu = table('purchases').find((x) => x.id === a.p_purchase) ?? fail('Compra não encontrada');
+    if (['cancelada', 'recebida'].includes(String(pu.status))) fail(`Compra ${pu.status}`);
+    let total = 0;
+    for (const x of a.p_items as { item_id: string; quantity: number }[]) {
+      const pi = table('purchase_items').find((i) => i.id === x.item_id && i.purchase_id === pu.id) ?? fail('Item não encontrado');
+      const q = n(x.quantity);
+      if (q <= 0 || n(pi.received_quantity) + q > n(pi.quantity)) fail('Quantidade recebida inválida');
+      let lotId: string | null = null;
+      if (pi.lot_code) {
+        const lot = table('inventory_lots').find((l) => l.stock_item_id === pi.stock_item_id && l.lot_code === pi.lot_code);
+        lotId = String(lot?.id ?? '') || null;
+        if (!lotId) { lotId = uid(); table('inventory_lots').push({ id: lotId, stock_item_id: pi.stock_item_id, lot_code: pi.lot_code, expires_at: pi.expires_at ?? null, received_at: todaySP() }); }
+      }
+      table('inventory_movements').push({ id: uid(), stock_item_id: pi.stock_item_id, lot_id: lotId, movement_type: 'entrada', quantity: q, unit_cost: pi.unit_cost, notes: `Recebimento compra nº ${pu.number}`, created_at: nowIso() });
+      pi.received_quantity = n(pi.received_quantity) + q;
+      const si = table('stock_items').find((s) => s.id === pi.stock_item_id);
+      if (si) si.unit_cost = pi.unit_cost;
+      total += Math.round(q * n(pi.unit_cost) * 100) / 100;
+    }
+    const complete = table('purchase_items').filter((i) => i.purchase_id === pu.id).every((i) => n(i.received_quantity) >= n(i.quantity));
+    pu.status = complete ? 'recebida' : 'recebida_parcial';
+    if (total > 0) {
+      const cat = table('financial_categories').find((c) => c.name === 'Compra de chopp');
+      table('payables').push({ id: uid(), supplier_id: pu.supplier_id, purchase_id: pu.id, description: `Compra nº ${pu.number}`, category_id: cat?.id ?? null, installment_no: table('payables').filter((p) => p.purchase_id === pu.id).length + 1, installment_count: 1, competence_date: todaySP(), due_date: pu.due_date ?? addDays(todaySP(), 30), amount: total, paid_amount: 0, status: 'em_aberto', created_at: nowIso() });
+    }
+    return { received_value: total, complete };
+  },
+
+  close_partner_month: (a) => {
+    const pa = table('partners').find((x) => x.id === a.p_partner) ?? fail('Parceiro não encontrado');
+    const per = `${String(a.p_period).slice(0, 7)}-01`;
+    const perEnd = addDays(addMonths(per, 1), -1);
+    if (table('partner_settlements').some((s) => s.partner_id === pa.id && s.period === per && s.status === 'fechado')) fail('Período já fechado para este parceiro');
+    const ledger = table('partner_ledger').filter((l) => l.partner_id === pa.id);
+    const opening = n(pa.opening_debt) + ledger.filter((l) => String(l.occurred_on) < per).reduce((s, l) => s + n(l.amount), 0);
+    const inPer = ledger.filter((l) => String(l.occurred_on) >= per && String(l.occurred_on) <= perEnd);
+    const obligations = inPer.filter((l) => l.entry_type === 'obrigacao').reduce((s, l) => s + n(l.amount), 0);
+    const pays = -inPer.filter((l) => l.entry_type === 'pagamento').reduce((s, l) => s + n(l.amount), 0);
+    const adj = inPer.filter((l) => ['ajuste', 'estorno'].includes(String(l.entry_type))).reduce((s, l) => s + n(l.amount), 0);
+    const credited = new Set(ledger.filter((l) => l.entry_type === 'credito').map((l) => String(l.order_id)));
+    const sid = uid();
+    let credits = 0;
+    for (const o of table('orders').filter((x) => x.partner_id === pa.id && x.status !== 'cancelado' && String(x.order_date) <= perEnd)) {
+      if (credited.has(String(o.id))) continue;
+      const recs = table('receivables').filter((r) => r.order_id === o.id && r.status !== 'cancelado');
+      const eligible = pa.eligibility === 'confirmado' ? !!o.confirmed_at : pa.eligibility === 'entregue' ? ['entregue', 'aguardando_recolhimento', 'finalizado'].includes(String(o.status)) : recs.length > 0 && recs.every((r) => r.status === 'pago');
+      if (!eligible) continue;
+      const credit = Math.round(n(o.total) * n(o.kind === 'evento' ? pa.percent_event : pa.percent_fixed)) / 100 + n(pa.fixed_per_order);
+      if (credit <= 0) continue;
+      table('partner_ledger').push({ id: uid(), partner_id: pa.id, entry_type: 'credito', amount: pa.offset_debt ? -credit : 0, order_id: o.id, settlement_id: sid, occurred_on: perEnd, description: `Crédito pedido nº ${o.number}`, created_at: nowIso() });
+      credits += credit;
+    }
+    const debt = opening + obligations - pays + adj;
+    const offset = pa.offset_debt ? Math.max(0, Math.min(credits, debt)) : 0;
+    const closing = debt - offset;
+    table('partner_settlements').push({ id: sid, partner_id: pa.id, period: per, opening_debt: opening, new_obligations: obligations, payments: pays, adjustments: adj, total_credits: credits, offset_amount: offset, closing_debt: closing, credit_payable: credits - offset, status: 'fechado', closed_at: nowIso() });
+    return { settlement_id: sid, credits, offset, closing_debt: closing, credit_payable: credits - offset };
+  },
+
+  reverse_partner_entry: (a) => {
+    if (!String(a.p_reason ?? '').trim()) fail('Justificativa obrigatória');
+    const e = table('partner_ledger').find((x) => x.id === a.p_entry) ?? fail('Lançamento não encontrado');
+    if (table('partner_ledger').some((x) => x.reversed_entry_id === e.id)) fail('Lançamento já estornado');
+    const id = uid();
+    table('partner_ledger').push({ id, partner_id: e.partner_id, entry_type: 'estorno', amount: -n(e.amount), reversed_entry_id: e.id, occurred_on: todaySP(), description: `Estorno: ${a.p_reason}`, created_at: nowIso() });
+    return id;
   },
 
   transfer_between_accounts: (a) => {

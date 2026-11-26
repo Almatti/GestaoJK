@@ -4,6 +4,11 @@ Sistema interno de gestão da **JK CHOPP** — distribuidora de chopp para event
 
 > Aplicação web responsiva e PWA instalável (computador, tablet, Android e iOS). Português do Brasil, BRL, fuso America/Sao_Paulo, datas DD/MM/AAAA.
 
+## Usar agora (sem servidor)
+Abra o endereço publicado na Vercel, informe seu nome e comece a usar. Os dados ficam no navegador do aparelho:
+**baixe um backup em Administração → Backups pelo menos uma vez por semana**. Quando o Supabase for configurado,
+os dados serão levados para o servidor.
+
 ## Começo rápido
 
 ```bash

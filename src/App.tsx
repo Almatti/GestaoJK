@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
-import { createBrowserRouter, Navigate, Outlet, RouterProvider } from 'react-router';
+import { createBrowserRouter, createHashRouter, Navigate, Outlet, RouterProvider } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { resolveDataMode } from '@/config/env';
 import { ToastProvider } from '@/components/ui/Toast';
@@ -7,6 +7,8 @@ import { LoadingBlock, EmptyState } from '@/components/ui/Feedback';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider, useAuth } from '@/features/auth/AuthContext';
 import { LoginPage } from '@/features/auth/LoginPage';
+import { LocalLoginPage } from '@/features/auth/LocalLoginPage';
+import { getDataClient } from '@/data/client';
 import { SetupPage } from '@/features/auth/SetupPage';
 import { PendingPage } from '@/features/auth/PendingPage';
 import { PwaUpdatePrompt } from '@/components/layout/PwaUpdatePrompt';
@@ -80,14 +82,16 @@ function Guard({ resource, children }: { resource: Resource; children: ReactNode
 function Protected() {
   const { loading, user, profile } = useAuth();
   if (loading) return <div className="p-8"><LoadingBlock rows={6} /></div>;
-  if (!user) return <LoginPage />;
+  if (!user) return getDataClient().mode === 'local' ? <LocalLoginPage /> : <LoginPage />;
   if (!profile?.active) return <PendingPage />;
   return <AppShell />;
 }
 
 const g = (resource: Resource, el: ReactNode) => <Guard resource={resource}>{el}</Guard>;
 
-const router = createBrowserRouter([
+// Hash router quando hospedado como arquivo estático sem reescrita de rotas (ex.: link de uso imediato).
+const createRouter = import.meta.env.VITE_ROUTER === 'hash' ? createHashRouter : createBrowserRouter;
+const router = createRouter([
   {
     element: <Protected />,
     children: [

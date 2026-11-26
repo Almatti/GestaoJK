@@ -51,7 +51,7 @@ export interface StorageAdapter {
 }
 
 export interface DataClient {
-  mode: 'supabase' | 'demo';
+  mode: 'supabase' | 'demo' | 'local';
   list<T = Row>(table: string, opts?: ListOptions): Promise<ListResult<T>>;
   get<T = Row>(table: string, id: string, select?: string): Promise<T | null>;
   insert<T = Row>(table: string, values: Row | Row[]): Promise<T>;

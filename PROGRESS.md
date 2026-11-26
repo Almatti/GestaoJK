@@ -2,6 +2,14 @@
 
 _Atualizado em 26/11/2026 · branch `ccr-b5a6f6b1-80wvkw`_
 
+## Uso imediato (sem servidor) — MODO LOCAL
+O app publicado abre no **modo local** enquanto o Supabase não estiver configurado (`.env.production` → `VITE_APP_MODE=local`):
+começa vazio (sem dados fictícios), guarda tudo no navegador do dispositivo (`localStorage`, chave `jk-local-db-v1`),
+tem PIN opcional, lembrete de backup semanal e **backup/restauração por arquivo JSON** (Administração → Backups).
+Limitações: dados por navegador (sem sincronização entre aparelhos), sem anexos, sem perfis múltiplos reais,
+sem trilha de auditoria e algumas funções avançadas exibem aviso. Ao configurar o Supabase, ele passa a ter prioridade;
+a importação do backup local para o Supabase é a próxima etapa a implementar.
+
 ## Resumo
 Fases 1 a 8 implementadas em primeira versão funcional: domínio testado, banco com RLS e funções transacionais, ~45 telas, PWA, assistente determinístico, motor de automações, Edge Functions, backups, CI e documentação. **Não está em produção**: falta aplicar as migrations em um projeto Supabase real, cadastrar dados reais e configurar integrações que dependem de credenciais.
 
@@ -32,6 +40,7 @@ Ver ARCHITECTURE.md (ADR). Destaques: regras transacionais em SQL; status deriva
 - CNPJ alfanumérico: consulta BrasilAPI pode não suportar até a base pública ser atualizada (tratado como "consulta indisponível").
 
 ## Próxima etapa
+0. Importador do backup do modo local para o Supabase (quando o servidor for criado).
 1. Criar projeto Supabase, aplicar migrations, criar admin, configurar empresa/Pix/regras de cobrança (DEPLOYMENT.md).
 2. Publicar no Cloudflare Pages (produção) e um segundo projeto em modo demo.
 3. Cadastrar dados reais (produtos, custos, tamanhos, clientes, equipamentos) e validar com a equipe.
