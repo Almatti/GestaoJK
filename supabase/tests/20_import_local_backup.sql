@@ -90,3 +90,10 @@ select t_expect_error($$select set_boleto_status((select id from boletos where o
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
 select t_expect_error($$select set_boleto_status((select id from boletos where our_number = 'BOL-T1'), 'baixado', 'x')$$, 'técnico não altera situação do boleto');
 reset role;
+-- Vencimento automático: emissão + 5 dias corridos; protesto 3 dias úteis após
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+create temp table bol3 as select create_boleto((select id from customers where name = 'Bar Teste Importação'), null, '{"issue_date":"2026-12-02","original_amount":"50","our_number":"BOL-T4","bank_code":"756"}'::jsonb) r;
+select t_assert((select due_date = '2026-12-07' and planned_protest_date = '2026-12-10' from boletos where our_number = 'BOL-T4'), 'vencimento = emissão + 5 corridos (07/12) e protesto = +3 úteis (10/12)');
+select t_assert((select (rv.collection_rule_snapshot->>'protest_after_days')::int = 3 from receivables rv join boletos b on b.receivable_id = rv.id where b.our_number = 'BOL-T4'), 'regra de multa/juros gravada no título');
+reset role;

@@ -152,7 +152,7 @@ select set_config('test.eq', (select id::text from equipment where asset_code = 
 select move_equipment(current_setting('test.eq')::uuid, 'em_ponto_fixo', current_setting('test.customer')::uuid, null, 'Instalação');
 select t_assert((select status = 'em_ponto_fixo' and customer_id = current_setting('test.customer')::uuid from equipment where id = current_setting('test.eq')::uuid), 'equipamento em ponto fixo sob custódia do cliente');
 select t_assert((select count(*) = 1 from equipment_movements where equipment_id = current_setting('test.eq')::uuid), 'movimentação registrada');
-select t_assert((select next_date = current_date + 15 from maintenance_schedules where equipment_id = current_setting('test.eq')::uuid and kind = 'assepsia'), 'assepsia agendada');
+select t_assert((select next_date = public.today_sp() + 15 from maintenance_schedules where equipment_id = current_setting('test.eq')::uuid and kind = 'assepsia'), 'assepsia agendada');
 -- Reserva simultânea bloqueada
 insert into equipment (asset_code, type_id) select 'CHP-002', id from equipment_types where name = 'Chopeira (teste)';
 insert into equipment_reservations (equipment_id, customer_id, starts_at, ends_at)

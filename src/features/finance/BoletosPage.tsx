@@ -15,10 +15,11 @@ import { Modal } from '@/components/ui/Overlay';
 import { SelectInput, TextInput } from '@/components/ui/Form';
 import { useToast } from '@/components/ui/Toast';
 import { formatReais } from '@/domain/money';
-import { formatDateBR, todaySP } from '@/domain/dates';
+import { addDays, formatDateBR, todaySP } from '@/domain/dates';
 import { BANKS, BoletoError, extractBoletoHints, findBoletoInText, parseBoleto, type BoletoInfo } from '@/domain/boleto';
 import { formatDocument } from '@/domain/documents';
-import { plannedProtestDate } from '@/domain/collections';
+import { calculateCharges, chargeRulesFromRow, plannedProtestDate } from '@/domain/collections';
+import { toCents } from '@/domain/money';
 import { extractPdf } from '@/lib/pdfText';
 
 type BoletoFilter = 'todos' | 'aberto' | 'vencido' | 'pago' | 'protesto' | 'pendencia' | 'cancelado';
@@ -46,6 +47,8 @@ export function BoletosPage() {
   const recv = useList<Row>('receivables_view', { range: [0, 4999] });
   const pdfs = useList<Row>('attachments', { select: 'entity_id', filters: [{ column: 'entity_type', op: 'eq', value: 'boleto' }, { column: 'archived_at', op: 'is', value: null }], range: [0, 4999] });
   const protests = useProtestMap();
+  const holidaysQ = useList<Row>('holidays', { select: 'day', range: [0, 1999] });
+  const hol = new Set((holidaysQ.data?.rows ?? []).map((h) => String(h.day)));
   const byId = new Map((recv.data?.rows ?? []).map((r) => [String(r.id), r]));
   const withPdf = new Set((pdfs.data?.rows ?? []).map((a) => String(a.entity_id)));
   const toast = useToast();
@@ -85,7 +88,7 @@ export function BoletosPage() {
                 <td className="whitespace-nowrap px-4 py-3">{String(b.our_number ?? '—')}<span className="block text-xs text-cocoa-700">Banco {String(b.bank_code ?? '—')}{b.wallet ? ` · cart. ${String(b.wallet)}` : ''}</span></td>
                 <td className="whitespace-nowrap px-4 py-3">{formatDateBR(b.due_date as string)}</td>
                 <td className="num whitespace-nowrap px-4 py-3 text-right">{formatReais(b.original_amount as number)}</td>
-                <td className="num whitespace-nowrap px-4 py-3 text-right">{formatReais(r?.outstanding as number)}</td>
+                <td className="num whitespace-nowrap px-4 py-3 text-right">{formatReais(r?.outstanding as number)}{(() => { const c = updatedCharges(b, r, hol); return c && c.total > c.principal ? <span className="block text-xs font-semibold text-red-700" title={`Multa ${formatReais(c.fine / 100)} + juros ${formatReais(c.interest / 100)} (${c.daysLate} dia(s))`}>Atualizado {formatReais(c.total / 100)}</span> : null; })()}</td>
                 <td className="whitespace-nowrap px-4 py-3">{b.planned_protest_date ? formatDateBR(b.planned_protest_date as string) : '—'}</td>
                 <td className="px-4 py-3"><span title={s.detail}><Badge tone={s.tone}>{s.label}</Badge></span></td>
                 <td className="whitespace-nowrap px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -101,6 +104,14 @@ export function BoletosPage() {
       {current && <BoletoDetail b={current.b} r={current.r} situation={current.s} onClose={() => setDetail(null)} />}
     </div>
   );
+}
+
+/** Multa e juros de hoje pela regra gravada no título (snapshot), somente para boleto ativo e título em aberto. */
+function updatedCharges(b: Row, r: Row | undefined, holidays: ReadonlySet<string>) {
+  if (!r || b.status !== 'registrado' || !['em_aberto', 'parcialmente_pago'].includes(String(r.status))) return null;
+  const outstanding = toCents(Number(r.outstanding ?? 0));
+  if (outstanding <= 0) return null;
+  return calculateCharges(outstanding, String(r.due_date), todaySP(), chargeRulesFromRow(r.collection_rule_snapshot as Row | null), holidays);
 }
 
 /** Baixa o PDF mais recente anexado ao boleto (link temporário e privado). */
@@ -132,6 +143,8 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
   const [reason, setReason] = useState('');
   const [cancelTitle, setCancelTitle] = useState(false);
   const active = b.status === 'registrado';
+  const holidaysQ = useList<Row>('holidays', { select: 'day', range: [0, 1999] });
+  const holidayDays = new Set((holidaysQ.data?.rows ?? []).map((h) => String(h.day)));
   const open = r && ['em_aberto', 'parcialmente_pago'].includes(String(r.status));
 
   const changeStatus = async () => {
@@ -188,6 +201,18 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
           <div><dt className="text-xs text-cocoa-700">Vencimento</dt><dd>{formatDateBR(b.due_date as string)}</dd></div>
           <div><dt className="text-xs text-cocoa-700">Valor</dt><dd className="num">{formatReais(b.original_amount as number)}</dd></div>
           <div><dt className="text-xs text-cocoa-700">Saldo do título</dt><dd className="num">{formatReais(r?.outstanding as number)}</dd></div>
+          {(() => {
+            const c = updatedCharges(b, r, holidayDays);
+            const rr = chargeRulesFromRow(r?.collection_rule_snapshot as Row | null);
+            return (
+              <div className="col-span-2 rounded-xl bg-cream-100 p-2">
+                <dt className="text-xs text-cocoa-700">Multa e juros (regra do título: multa {rr.finePercent}% + juros {rr.interestPercent}% {rr.interestPeriod === 'mensal' ? 'a.m.' : 'a.d.'}{rr.graceDays ? `, carência ${rr.graceDays} dia(s)` : ''})</dt>
+                <dd>{c && c.daysLate > 0
+                  ? <span className="num">{c.daysLate} dia(s) de atraso · multa {formatReais(c.fine / 100)} · juros {formatReais(c.interest / 100)} · <strong>total hoje {formatReais(c.total / 100)}</strong></span>
+                  : 'Sem encargos hoje (não vencido ou já quitado).'}</dd>
+              </div>
+            );
+          })()}
           <div><dt className="text-xs text-cocoa-700">Protesto previsto (interno)</dt><dd>{b.planned_protest_date ? formatDateBR(b.planned_protest_date as string) : '—'}</dd></div>
           <div><dt className="text-xs text-cocoa-700">Título</dt><dd>{String(r?.description ?? '—')}</dd></div>
           {b.digitable_line ? <div className="col-span-2"><dt className="text-xs text-cocoa-700">Linha digitável</dt><dd className="flex items-center gap-2 break-all font-mono text-xs">{String(b.digitable_line)}<Button size="sm" variant="ghost" icon={<Copy className="size-4" />} onClick={() => navigator.clipboard.writeText(String(b.digitable_line)).then(() => toast('Linha digitável copiada.'))}>Copiar</Button></dd></div> : null}
@@ -278,6 +303,15 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
     .find((r) => customerId && r.customer_id === customerId) ?? (rules.data?.rows ?? []).filter((r) => !r.customer_id && vigente(r))[0];
   const protestRule = rule ? { protestAfterDays: Number(rule.protest_after_days ?? 0), protestDayCount: (rule.protest_day_count === 'uteis' ? 'uteis' : 'corridos') as 'uteis' | 'corridos' } : null;
   const holidaySet = new Set((holidayRows.data?.rows ?? []).map((h) => String(h.day)));
+  // Vencimento automático: emissão + N dias corridos (Configurações → Parâmetros → Financeiro).
+  const settingsRows = useList<Row>('settings', { range: [0, 499] });
+  const dueDays = Number(settingsRows.data?.rows.find((x) => x.key === 'boletos.due_days_after_issue')?.value ?? 5);
+  const [dueSource, setDueSource] = useState<'regra' | 'codigo' | 'manual'>('regra');
+  const ruleDue = v.issue_date ? addDays(v.issue_date, dueDays) : '';
+  useEffect(() => {
+    if (dueSource === 'regra' && ruleDue) setV((s) => (s.due_date === ruleDue ? s : { ...s, due_date: ruleDue }));
+  }, [ruleDue, dueSource]);
+  const charges = rule ? chargeRulesFromRow(rule) : null;
   const suggestedProtest = v.due_date && protestRule ? plannedProtestDate(v.due_date, protestRule, holidaySet) : null;
   useEffect(() => {
     if (!protestTouched) setV((s) => ({ ...s, planned_protest_date: suggestedProtest ?? '' }));
@@ -295,6 +329,7 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
       wallet: b.wallet ?? s.wallet, our_number: b.ourNumber ?? s.our_number
     }));
     setCode(b.digitableLine);
+    if (b.dueDate) setDueSource('codigo');
     const missing = [b.amount == null && 'valor', !b.dueDate && 'vencimento'].filter(Boolean).join(' e ');
     setRead({ tone: missing ? 'warning' : 'success', text: `${origin}: ${b.kind === 'bancario' ? `banco ${b.bankCode}${b.bankName ? ` (${b.bankName})` : ''}` : 'boleto de arrecadação/convênio'}${b.amount != null ? ` · ${formatReais(b.amount)}` : ''}${b.dueDate ? ` · vence ${formatDateBR(b.dueDate)}` : ''}.${missing ? ` O código não traz ${missing}: preencha abaixo.` : ''}` });
   };
@@ -414,7 +449,8 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
               const r = titles.find((x) => String(x.id) === id);
               if (r) {
                 if (!customerId) setCustomerId(String(r.customer_id));
-                setV((s) => ({ ...s, due_date: s.due_date || String(r.due_date ?? ''), original_amount: s.original_amount || String(r.outstanding ?? '') }));
+                if (dueSource === 'regra' && r.due_date) setDueSource('manual');
+                setV((s) => ({ ...s, due_date: dueSource === 'regra' ? String(r.due_date ?? s.due_date) : s.due_date || String(r.due_date ?? ''), original_amount: s.original_amount || String(r.outstanding ?? '') }));
               }
             }}
             options={[{ value: NEW_TITLE, label: '➕ Criar novo título com os dados deste boleto' },
@@ -426,14 +462,19 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
           <TextInput label="Número do documento" value={v.document_number} onChange={set('document_number')} />
           <TextInput label="Seu número" value={v.your_number} onChange={set('your_number')} />
           <TextInput label="Nosso número" value={v.our_number} onChange={set('our_number')} />
-          <TextInput label="Emissão" type="date" value={v.issue_date} onChange={set('issue_date')} />
-          <TextInput label="Vencimento" type="date" required value={v.due_date} onChange={set('due_date')} />
+          <TextInput label="Emissão" type="date" value={v.issue_date} onChange={set('issue_date')} hint={`O vencimento é preenchido com ${dueDays} dia(s) corridos após a emissão.`} />
+          <TextInput label="Vencimento" type="date" required value={v.due_date}
+            onChange={(e) => { setDueSource('manual'); setV((s) => ({ ...s, due_date: e.target.value })); }}
+            hint={dueSource === 'regra' ? `Automático: emissão + ${dueDays} dia(s) corridos.`
+              : dueSource === 'codigo' ? `Lido do código do boleto.${ruleDue && v.due_date !== ruleDue ? ` Atenção: pela regra (emissão + ${dueDays}) seria ${formatDateBR(ruleDue)} — confira com o banco.` : ''}`
+              : `Alterado manualmente.${ruleDue && v.due_date !== ruleDue ? ` Pela regra seria ${formatDateBR(ruleDue)}.` : ''}`} />
           <TextInput label="Valor original (R$)" type="number" step="0.01" required value={v.original_amount} onChange={set('original_amount')} />
           <TextInput label="Encaminhamento a protesto previsto (data interna)" type="date" value={v.planned_protest_date}
             onChange={(e) => { setProtestTouched(true); setV((s) => ({ ...s, planned_protest_date: e.target.value })); }}
             hint={protestRule && protestRule.protestAfterDays > 0
               ? `Calculado: ${protestRule.protestAfterDays} dia(s) ${protestRule.protestDayCount === 'uteis' ? 'úteis' : 'corridos'} após o vencimento (regra de cobrança${rule?.customer_id ? ' do cliente' : ''}${protestRule.protestDayCount === 'uteis' ? ', sem fins de semana e feriados cadastrados' : ''}). Não é a data efetiva do protesto.${protestTouched && suggestedProtest && v.planned_protest_date !== suggestedProtest ? ` Sugerido: ${formatDateBR(suggestedProtest)}.` : ''}`
               : 'Sem prazo de protesto na regra de cobrança (Financeiro → Cobranças). Não é a data efetiva do protesto.'} />
+          {charges && <p className="text-xs text-cocoa-700 sm:col-span-2">Após o vencimento: multa de {charges.finePercent}% + juros de {charges.interestPercent}% {charges.interestPeriod === 'mensal' ? 'ao mês (pro rata dia)' : 'ao dia'}{charges.graceDays ? `, após ${charges.graceDays} dia(s) de carência` : ''} — regra de cobrança{rule?.customer_id ? ' do cliente' : ''}, gravada no título e calculada automaticamente.</p>}
           <TextInput wrapperClassName="sm:col-span-2" label="Linha digitável" value={v.digitable_line} onChange={set('digitable_line')} />
           <TextInput wrapperClassName="sm:col-span-2" label="Código de barras" value={v.barcode} onChange={set('barcode')} />
         </div>

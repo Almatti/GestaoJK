@@ -4,6 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DB=${PGTEST_DB:-jk_test}
+# Datas dos testes no fuso da empresa (current_date = data de São Paulo, como today_sp()).
+export PGTZ=America/Sao_Paulo
 PSQL="psql -v ON_ERROR_STOP=1 -q -X"
 $PSQL -d postgres -c "drop database if exists $DB" -c "create database $DB" >/dev/null
 $PSQL -d "$DB" -f supabase/tests/00_supabase_stub.sql >/dev/null

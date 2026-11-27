@@ -20,6 +20,7 @@ export const SETTING_DEFS: SettingDef[] = [
   { key: 'commercial.margin_indicator', label: 'Indicador de aprovação', type: 'select', group: 'Comercial', default: 'contribution', options: [{ value: 'contribution', label: 'Margem de contribuição' }, { value: 'gross', label: 'Margem bruta' }] },
   { key: 'commercial.sales_tax_percent', label: 'Tributos estimados sobre vendas (%)', type: 'number', group: 'Comercial', min: 0, max: 60, default: 0, help: 'Defina com a contabilidade. Usado na DRE gerencial e no simulador.' },
   { key: 'health.thresholds', label: 'Critérios de saúde comercial', type: 'json', group: 'Comercial', default: { excellentRatio: 1.1, healthyRatio: 0.85, attentionRatio: 0.5, inactiveDays: 60, minHistoryDays: 30, minOrders: 2, trendDropPercent: 30, windowDays: 30 } },
+  { key: 'boletos.due_days_after_issue', label: 'Vencimento do boleto (dias corridos após a emissão)', type: 'number', group: 'Financeiro', min: 0, max: 365, default: 5, help: 'Ao informar a data de emissão, o vencimento é preenchido automaticamente. Se o boleto lido trouxer outro vencimento, vale o do boleto (com aviso).' },
   { key: 'finance.due_soon_days', label: 'Dias para "a vencer"', type: 'number', group: 'Financeiro', min: 1, max: 60, default: 7 },
   { key: 'equipment.idle_days', label: 'Dias para equipamento ocioso', type: 'number', group: 'Patrimônio', min: 1, max: 365, default: 15 },
   { key: 'equipment.sanitization_days', label: 'Periodicidade padrão de assepsia (dias)', type: 'number', group: 'Patrimônio', min: 1, max: 365, default: 15 },

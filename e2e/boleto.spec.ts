@@ -108,3 +108,14 @@ test('avisos aparecem POR CIMA da janela aberta (ex.: faltou o cliente ao salvar
   expect(shot.length).toBeGreaterThan(0);
   expect(own.length).toBeGreaterThan(0);
 });
+
+test('emissão preenche vencimento (+5 corridos) e protesto (+3 úteis) automaticamente', async ({ page }) => {
+  await login(page);
+  await page.goto('/financeiro/boletos');
+  await page.getByRole('button', { name: 'Cadastrar boleto' }).click();
+  await page.getByLabel('Emissão').fill('2026-12-02');
+  await expect(page.getByLabel('Vencimento')).toHaveValue('2026-12-07');
+  await expect(page.getByLabel('Encaminhamento a protesto previsto (data interna)')).toHaveValue(/2026-12-1\d/);
+  await expect(page.getByText(/Automático: emissão \+ 5 dia\(s\) corridos/)).toBeVisible();
+  await expect(page.getByText(/Após o vencimento: multa de/)).toBeVisible();
+});

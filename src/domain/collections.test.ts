@@ -86,3 +86,17 @@ describe('data prevista de encaminhamento a protesto', () => {
     expect(plannedProtestDate('2026-12-01', { protestAfterDays: 0, protestDayCount: 'uteis' })).toBeNull();
   });
 });
+
+describe('multa e juros pela regra salva no título', () => {
+  it('converte a regra do banco e calcula encargos (multa 4% + juros 3% a.m.)', async () => {
+    const { chargeRulesFromRow, calculateCharges } = await import('./collections');
+    const rules = chargeRulesFromRow({ fine_percent: '4', interest_percent: '3', interest_period: 'mensal', grace_days: 0, due_date_handling: 'proximo_dia_util', protest_after_days: 3, protest_day_count: 'uteis' });
+    expect(rules).toMatchObject({ finePercent: 4, interestPercent: 3, protestDayCount: 'uteis' });
+    const c = calculateCharges(10000, '2026-12-01', '2026-12-11', rules);
+    expect(c.daysLate).toBe(10);
+    expect(c.fine).toBe(400);
+    expect(c.interest).toBe(100); // 3%/30 × 10 dias × R$ 100,00
+    expect(c.total).toBe(10500);
+    expect(chargeRulesFromRow(null).finePercent).toBe(0);
+  });
+});

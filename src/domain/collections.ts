@@ -252,3 +252,15 @@ export function allocatePayment<T extends { id: string; due: ISODate; outstandin
   return { allocations, remainderCents: left };
 }
 
+
+/** Converte uma regra de cobrança do banco (snake_case, ex.: collection_rule_snapshot) em ChargeRules. */
+export function chargeRulesFromRow(r: Record<string, unknown> | null | undefined): ChargeRules {
+  if (!r) return EMPTY_CHARGE_RULES;
+  const num = (v: unknown) => (v == null || v === '' ? 0 : Number(v));
+  return {
+    finePercent: num(r.fine_percent), interestPercent: num(r.interest_percent),
+    interestPeriod: r.interest_period === 'diario' ? 'diario' : 'mensal', graceDays: num(r.grace_days),
+    dueDateHandling: r.due_date_handling === 'manter' ? 'manter' : 'proximo_dia_util',
+    protestAfterDays: num(r.protest_after_days), protestDayCount: r.protest_day_count === 'uteis' ? 'uteis' : 'corridos'
+  };
+}
