@@ -97,6 +97,15 @@ test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencime
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /^Pago \(/ }).click();
   await expect(page.getByRole('row', { name: /000068/ })).toBeVisible();
+
+  // Corrigir situação lançada por engano: forma de recebimento Pix → boleto
+  await page.getByRole('row', { name: /000068/ }).getByRole('button', { name: 'Gerenciar' }).click();
+  await page.getByRole('button', { name: 'Corrigir situação' }).click();
+  await page.getByLabel('O que corrigir').selectOption('forma_pagamento');
+  await page.getByLabel('Forma correta').selectOption('boleto');
+  await page.getByLabel('Motivo (obrigatório)').fill('Cliente pagou pelo boleto');
+  await page.getByRole('button', { name: 'Aplicar correção' }).click();
+  await expect(page.getByText('Forma de recebimento corrigida.')).toBeVisible();
   expect(errors.filter((e) => !/favicon|manifest/i.test(e))).toEqual([]);
 });
 

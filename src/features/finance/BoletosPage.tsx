@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Copy, ScanLine, FileUp, Search, Download, CheckCircle2, Landmark, Ban, Archive, RotateCcw, CalendarClock } from 'lucide-react';
+import { Plus, Copy, ScanLine, FileUp, Search, Download, CheckCircle2, Landmark, Ban, Archive, RotateCcw, CalendarClock, Wrench } from 'lucide-react';
 import { useList, db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -7,7 +7,7 @@ import { PageHeader, Card } from '@/components/ui/Layout';
 import { Button } from '@/components/ui/Button';
 import { Alert, Badge, EmptyState, LoadingBlock, friendlyError } from '@/components/ui/Feedback';
 import { Attachments } from '@/components/ui/Attachments';
-import { ReceiptDialog } from './ReceiptDialog';
+import { ReceiptDialog, METHODS } from './ReceiptDialog';
 import { ProtestDialog } from './ProtestsPage';
 import { useProtestMap } from './ReceivableStatusBadge';
 import { PROTEST_STATUS, type ProtestStatus } from '@/domain/collections';
@@ -142,7 +142,9 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
   const toast = useToast();
   const invalidate = useInvalidateAll();
   const protest = useList<Row>('protest_records', { filters: [{ column: 'receivable_id', op: 'eq', value: b.receivable_id }] });
-  const p = protest.data?.rows[0];
+  const pRow = protest.data?.rows[0];
+  // Protesto "não encaminhado" (ex.: desfeito por correção) equivale a não ter protesto.
+  const p = pRow && pRow.status !== 'nao_encaminhado' ? pRow : undefined;
   const [receipt, setReceipt] = useState(false);
   const [protestOpen, setProtestOpen] = useState(false);
   const [statusAction, setStatusAction] = useState<'cancelado' | 'baixado' | 'registrado' | null>(null);
@@ -164,12 +166,32 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
       toast(friendlyError(e), 'danger');
     }
   };
+  const [fixOpen, setFixOpen] = useState(false);
+  const [fix, setFix] = useState<{ action: '' | 'desfazer_protesto' | 'forma_pagamento' | 'estornar_pagamento'; reason: string; method: string }>({ action: '', reason: '', method: 'boleto' });
+  const paidSomething = Number(r?.paid_amount ?? 0) > 0;
+  const fixOptions = [
+    ...(p ? [{ value: 'desfazer_protesto', label: 'Desfazer protesto lançado por engano (volta a não ter protesto)' }] : []),
+    ...(paidSomething ? [{ value: 'forma_pagamento', label: 'Corrigir a forma de recebimento (ex.: Pix → boleto)' }, { value: 'estornar_pagamento', label: 'Estornar pagamento lançado por engano (volta a ficar em aberto/vencido)' }] : [])
+  ];
+  const applyFix = async () => {
+    if (!fix.action) return toast('Escolha o que corrigir.', 'warning');
+    if (!fix.reason.trim()) return toast('Informe o motivo da correção.', 'warning');
+    try {
+      await db().rpc('correct_boleto', { p_boleto: b.id, p_action: fix.action, p_reason: fix.reason, p_method: fix.action === 'forma_pagamento' ? fix.method : null });
+      invalidate();
+      toast(fix.action === 'desfazer_protesto' ? 'Protesto desfeito. A situação foi recalculada.' : fix.action === 'forma_pagamento' ? 'Forma de recebimento corrigida.' : 'Pagamento estornado. O boleto voltou a ficar em aberto.');
+      setFixOpen(false);
+      setFix({ action: '', reason: '', method: 'boleto' });
+    } catch (e) {
+      toast(friendlyError(e), 'danger');
+    }
+  };
   const [inNotary, setInNotary] = useState(false);
   const [notary, setNotary] = useState({ stage: 'em_cartorio' as 'em_cartorio' | 'protestado', office: '', protocol: '', date: '' });
   /** Registra um título que já foi ao cartório (pelo banco), mesmo que já esteja pago — passa pelas etapas válidas. */
   const registerInNotary = async () => {
     try {
-      let rec = p;
+      let rec = pRow;
       if (!rec) rec = await db().insert<Row>('protest_records', { receivable_id: b.receivable_id, boleto_id: b.id, status: 'programado', planned_date: b.planned_protest_date ?? null });
       const id = String(rec.id);
       await db().update('protest_records', id, { status: 'encaminhado', notary_office: notary.office || null, protocol_number: notary.protocol || null, notes: 'Título já encaminhado ao cartório (registrado no sistema)' });
@@ -251,6 +273,7 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
             <Button variant="ghost" icon={<Archive className="size-4" />} onClick={() => setStatusAction('baixado')} title="Somente quando o boleto foi retirado do banco SEM pagamento">Baixar no banco (sem pagamento)</Button>
           </>}
           {(b.status === 'cancelado' || b.status === 'baixado') && (can('cobranca', 'cancel') || can('financeiro', 'cancel')) && <Button variant="ghost" icon={<RotateCcw className="size-4" />} onClick={() => setStatusAction('registrado')}>Reativar boleto</Button>}
+          {fixOptions.length > 0 && (can('cobranca', 'approve') || can('financeiro', 'edit') || can('admin', 'edit')) && <Button variant="ghost" icon={<Wrench className="size-4" />} onClick={() => setFixOpen((x) => !x)}>Corrigir situação</Button>}
         </div>
         {situation.key === 'pago_em_protesto' && p && (
           <Alert tone="warning" title="O que fazer">
@@ -264,6 +287,17 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
           </Alert>
         )}
 
+        {fixOpen && (
+          <div className="space-y-2 rounded-2xl border border-tangerine-200 bg-white/70 p-3">
+            <p className="text-sm font-semibold">Corrigir situação lançada por engano</p>
+            <p className="text-xs text-cocoa-700">A correção fica registrada na auditoria com o motivo e o seu usuário. Nada é apagado: o histórico mostra o que foi corrigido.{b.status === 'cancelado' || b.status === 'baixado' ? ' Para desfazer um cancelamento, use "Reativar boleto".' : ''}</p>
+            <SelectInput label="O que corrigir" placeholder="Selecione…" value={fix.action} onChange={(e) => setFix((s) => ({ ...s, action: e.target.value as typeof s.action }))} options={fixOptions} />
+            {fix.action === 'forma_pagamento' && <SelectInput label="Forma correta" value={fix.method} onChange={(e) => setFix((s) => ({ ...s, method: e.target.value }))} options={METHODS} />}
+            {fix.action === 'estornar_pagamento' && <Alert tone="warning">O pagamento será estornado no financeiro (entra como estorno no caixa) e o boleto volta a ficar em aberto ou vencido.</Alert>}
+            <TextInput label="Motivo (obrigatório)" value={fix.reason} onChange={(e) => setFix((s) => ({ ...s, reason: e.target.value }))} placeholder="Ex.: lancei o protesto no boleto errado" />
+            <div className="flex gap-2"><Button size="sm" onClick={applyFix}>Aplicar correção</Button><Button size="sm" variant="secondary" onClick={() => setFixOpen(false)}>Voltar</Button></div>
+          </div>
+        )}
         {inNotary && (
           <div className="space-y-2 rounded-2xl border border-tangerine-100 bg-white/60 p-3">
             <p className="text-sm font-semibold">Registrar que o título está no cartório</p>

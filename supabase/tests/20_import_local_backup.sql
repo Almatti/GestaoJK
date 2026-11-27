@@ -97,3 +97,24 @@ create temp table bol3 as select create_boleto((select id from customers where n
 select t_assert((select due_date = '2026-12-07' and planned_protest_date = '2026-12-10' from boletos where our_number = 'BOL-T4'), 'vencimento = emissão + 5 corridos (07/12) e protesto = +3 úteis (10/12)');
 select t_assert((select (rv.collection_rule_snapshot->>'protest_after_days')::int = 3 from receivables rv join boletos b on b.receivable_id = rv.id where b.our_number = 'BOL-T4'), 'regra de multa/juros gravada no título');
 reset role;
+-- Correções de lançamentos feitos por engano
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+create temp table bol5 as select create_boleto((select id from customers where name = 'Bar Teste Importação'), null, '{"issue_date":"2026-12-02","original_amount":"80","our_number":"BOL-T5","bank_code":"756"}'::jsonb) r;
+select register_receipt((select (r->>'receivable_id')::uuid from bol5), 80, 'pix');
+insert into protest_records (receivable_id, status) values ((select (r->>'receivable_id')::uuid from bol5), 'programado');
+update protest_records set status = 'encaminhado' where receivable_id = (select (r->>'receivable_id')::uuid from bol5);
+update protest_records set status = 'protestado' where receivable_id = (select (r->>'receivable_id')::uuid from bol5);
+update protest_records set status = 'aguardando_anuencia' where receivable_id = (select (r->>'receivable_id')::uuid from bol5);
+select t_expect_error($$select correct_boleto((select (r->>'boleto_id')::uuid from bol5), 'desfazer_protesto', '')$$, 'correção exige motivo');
+select correct_boleto((select (r->>'boleto_id')::uuid from bol5), 'desfazer_protesto', 'Lancei protesto no boleto errado');
+select t_assert((select status = 'nao_encaminhado' and protested_at is null from protest_records where receivable_id = (select (r->>'receivable_id')::uuid from bol5)), 'protesto lançado por engano desfeito');
+select t_assert((select count(*) = 5 from protest_status_history h join protest_records p on p.id = h.protest_id where p.receivable_id = (select (r->>'receivable_id')::uuid from bol5)), 'histórico preservado com a correção');
+select t_expect_error($$update protest_records set status = 'protestado' where receivable_id = (select (r->>'receivable_id')::uuid from bol5)$$, 'trava de etapas continua valendo fora da correção');
+select correct_boleto((select (r->>'boleto_id')::uuid from bol5), 'forma_pagamento', 'Foi pago pelo boleto', 'boleto');
+select t_assert((select rv.payment_method = 'boleto' from receivables rv where rv.id = (select (r->>'receivable_id')::uuid from bol5)), 'forma de recebimento corrigida');
+select correct_boleto((select (r->>'boleto_id')::uuid from bol5), 'estornar_pagamento', 'Pagamento lançado no cliente errado');
+select t_assert((select rv.status = 'em_aberto' and rv.paid_amount = 0 and b.status = 'registrado' from receivables rv join boletos b on b.receivable_id = rv.id where b.our_number = 'BOL-T5'), 'estorno reabre o título e o boleto');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
+select t_expect_error($$select correct_boleto((select (r->>'boleto_id')::uuid from bol5), 'desfazer_protesto', 'x')$$, 'técnico não corrige');
+reset role;

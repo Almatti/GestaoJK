@@ -515,6 +515,27 @@ export const DEMO_RPC: Record<string, (args: Record<string, unknown>) => unknown
     table('boletos').push({ ...clean, id, receivable_id: rid, original_amount: amount, issue_date: b.issue_date || todaySP(), status: 'registrado', origin: 'manual', created_at: nowIso() });
     return { boleto_id: id, receivable_id: rid, receivable_created: created };
   },
+  correct_boleto: (a) => {
+    if (!String(a.p_reason ?? '').trim()) throw new Error('Informe o motivo da correção');
+    const b = table('boletos').find((x) => x.id === a.p_boleto);
+    if (!b) throw new Error('Boleto não encontrado');
+    const r = table('receivables').find((x) => x.id === b.receivable_id)!;
+    if (a.p_action === 'desfazer_protesto') {
+      const p = table('protest_records').find((x) => x.receivable_id === r.id && x.status !== 'nao_encaminhado');
+      if (!p) throw new Error('Não há protesto lançado neste boleto');
+      Object.assign(p, { status: 'nao_encaminhado', protested_at: null, sent_at: null, notes: `Correção — protesto lançado por engano: ${String(a.p_reason)}` });
+    } else if (a.p_action === 'forma_pagamento') {
+      if (!(n(r.paid_amount) > 0)) throw new Error('Não há pagamento registrado neste boleto');
+      r.payment_method = a.p_method;
+      for (const al of table('payment_allocations').filter((x) => x.receivable_id === r.id)) { const p = table('payments').find((x) => x.id === al.payment_id); if (p) p.method = a.p_method; }
+    } else if (a.p_action === 'estornar_pagamento') {
+      if (!(n(r.paid_amount) > 0)) throw new Error('Não há pagamento registrado neste boleto');
+      for (const al of table('payment_allocations').filter((x) => x.receivable_id === r.id && !x.reversed)) { al.reversed = true; const p = table('payments').find((x) => x.id === al.payment_id); if (p) p.reversed_at = nowIso(); }
+      Object.assign(r, { paid_amount: 0, status: 'em_aberto', paid_at: null });
+      if (b.status === 'liquidado') b.status = 'registrado';
+    } else throw new Error('Correção inválida');
+    return { boleto_id: b.id, action: a.p_action };
+  },
   set_boleto_status: (a) => {
     const b = table('boletos').find((x) => x.id === a.p_boleto);
     if (!b) throw new Error('Boleto não encontrado');
