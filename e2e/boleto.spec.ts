@@ -77,6 +77,17 @@ test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencime
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /^Pagos/ }).click();
   await expect(page.getByRole('row', { name: /000068/ }).getByText(/Pago/)).toBeVisible();
+
+  // Pago via Pix, mas o título já estava protestado no cartório
+  await page.getByRole('row', { name: /000068/ }).getByRole('button', { name: 'Gerenciar' }).click();
+  await page.getByRole('button', { name: 'Já está no cartório' }).click();
+  await page.getByLabel('Etapa atual no cartório').selectOption('protestado');
+  await page.getByRole('button', { name: 'Registrar', exact: true }).click();
+  await expect(page.getByText(/Pago, mas ainda em protesto/).first()).toBeVisible();
+  await expect(page.getByText(/Aguardando anuência/).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /Pago c\/ pendência no cartório/ }).click();
+  await expect(page.getByRole('row', { name: /000068/ })).toBeVisible();
   expect(errors.filter((e) => !/favicon|manifest/i.test(e))).toEqual([]);
 });
 

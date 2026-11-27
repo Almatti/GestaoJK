@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Copy, ScanLine, FileUp, Search, Download, CheckCircle2, Landmark, Ban, Archive, RotateCcw } from 'lucide-react';
+import { Plus, Copy, ScanLine, FileUp, Search, Download, CheckCircle2, Landmark, Ban, Archive, RotateCcw, CalendarClock } from 'lucide-react';
 import { useList, db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -145,6 +145,25 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
       toast(friendlyError(e), 'danger');
     }
   };
+  const [inNotary, setInNotary] = useState(false);
+  const [notary, setNotary] = useState({ stage: 'em_cartorio' as 'em_cartorio' | 'protestado', office: '', protocol: '', date: '' });
+  /** Registra um título que já foi ao cartório (pelo banco), mesmo que já esteja pago — passa pelas etapas válidas. */
+  const registerInNotary = async () => {
+    try {
+      let rec = p;
+      if (!rec) rec = await db().insert<Row>('protest_records', { receivable_id: b.receivable_id, boleto_id: b.id, status: 'programado', planned_date: b.planned_protest_date ?? null });
+      const id = String(rec.id);
+      await db().update('protest_records', id, { status: 'encaminhado', notary_office: notary.office || null, protocol_number: notary.protocol || null, notes: 'Título já encaminhado ao cartório (registrado no sistema)' });
+      await db().update('protest_records', id, notary.stage === 'protestado'
+        ? { status: 'protestado', protested_at: notary.date || todaySP() }
+        : { status: 'em_cartorio' });
+      invalidate();
+      setInNotary(false);
+      toast(r?.status === 'pago' ? 'Cartório registrado. O boleto aparece como "Pago, mas ainda em protesto" até o cliente resolver no cartório.' : 'Cartório registrado no boleto.');
+    } catch (e) {
+      toast(friendlyError(e), 'danger');
+    }
+  };
   const scheduleProtest = async () => {
     try {
       await db().insert('protest_records', { receivable_id: b.receivable_id, boleto_id: b.id, status: 'programado', planned_date: b.planned_protest_date ?? null });
@@ -177,17 +196,39 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
         <div className="flex flex-wrap gap-2">
           {open && (can('financeiro', 'create') || can('cobranca', 'edit')) && <Button icon={<CheckCircle2 className="size-4" />} onClick={() => setReceipt(true)}>Registrar pagamento</Button>}
           {p ? <Button variant="secondary" icon={<Landmark className="size-4" />} onClick={() => setProtestOpen(true)}>Protesto: {PROTEST_STATUS[p.status as ProtestStatus]}</Button>
-            : active && open && can('cobranca', 'create') && <Button variant="secondary" icon={<Landmark className="size-4" />} onClick={scheduleProtest}>Programar protesto</Button>}
+            : <>
+              {active && open && can('cobranca', 'create') && <Button variant="secondary" icon={<CalendarClock className="size-4" />} onClick={scheduleProtest}>Programar protesto</Button>}
+              {b.status !== 'cancelado' && can('cobranca', 'create') && <Button variant="secondary" icon={<Landmark className="size-4" />} onClick={() => setInNotary(true)}>Já está no cartório</Button>}
+            </>}
           {active && (can('cobranca', 'cancel') || can('financeiro', 'cancel')) && <>
             <Button variant="ghost" icon={<Ban className="size-4" />} onClick={() => setStatusAction('cancelado')}>Cancelar boleto</Button>
-            <Button variant="ghost" icon={<Archive className="size-4" />} onClick={() => setStatusAction('baixado')}>Baixar no banco</Button>
+            <Button variant="ghost" icon={<Archive className="size-4" />} onClick={() => setStatusAction('baixado')} title="Somente quando o boleto foi retirado do banco SEM pagamento">Baixar no banco (sem pagamento)</Button>
           </>}
           {(b.status === 'cancelado' || b.status === 'baixado') && (can('cobranca', 'cancel') || can('financeiro', 'cancel')) && <Button variant="ghost" icon={<RotateCcw className="size-4" />} onClick={() => setStatusAction('registrado')}>Reativar boleto</Button>}
         </div>
         {r?.status === 'pago' && p && ['encaminhado', 'em_cartorio', 'protestado', 'aguardando_anuencia', 'aguardando_cancelamento', 'cancelamento_solicitado'].includes(String(p.status)) && (
-          <Alert tone="warning" title="Pago, mas ainda no cartório">Não cobre de novo. Abra "Protesto" para gerar a carta de anuência e acompanhar o cancelamento do protesto até concluir.</Alert>
+          <Alert tone="warning" title="Pago, mas ainda no cartório">
+            Não cobre de novo e não cancele nem baixe o boleto.{' '}
+            {['encaminhado', 'em_cartorio'].includes(String(p.status))
+              ? 'Como o protesto ainda não foi lavrado, peça ao banco a retirada (desistência) e toque em "Protesto" → "Retirado". As custas da desistência, se houver, ficam com o cliente.'
+              : 'Toque em "Protesto" → "Aguardando anuência" → "Gerar declaração de anuência (PDF)" e entregue ao cliente. Ele vai ao cartório, paga as custas e tira o protesto; depois marque "Cancelamento solicitado" e, por fim, "Protesto cancelado".'}
+          </Alert>
         )}
 
+        {inNotary && (
+          <div className="space-y-2 rounded-2xl border border-tangerine-100 bg-white/60 p-3">
+            <p className="text-sm font-semibold">Registrar que o título está no cartório</p>
+            <p className="text-xs text-cocoa-700">Use quando o banco já enviou o boleto ao cartório. Se o cliente já pagou (ex.: Pix), registre o pagamento também — o boleto fica como "Pago, mas ainda em protesto" até ele resolver no cartório.</p>
+            <SelectInput label="Etapa atual no cartório" value={notary.stage} onChange={(e) => setNotary((s) => ({ ...s, stage: e.target.value as 'em_cartorio' | 'protestado' }))}
+              options={[{ value: 'em_cartorio', label: 'Em cartório (ainda não protestado)' }, { value: 'protestado', label: 'Já protestado' }]} />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <TextInput label="Cartório (opcional)" value={notary.office} onChange={(e) => setNotary((s) => ({ ...s, office: e.target.value }))} />
+              <TextInput label="Protocolo (opcional)" value={notary.protocol} onChange={(e) => setNotary((s) => ({ ...s, protocol: e.target.value }))} />
+              {notary.stage === 'protestado' && <TextInput label="Data do protesto" type="date" value={notary.date} onChange={(e) => setNotary((s) => ({ ...s, date: e.target.value }))} />}
+            </div>
+            <div className="flex gap-2"><Button size="sm" onClick={registerInNotary}>Registrar</Button><Button size="sm" variant="secondary" onClick={() => setInNotary(false)}>Voltar</Button></div>
+          </div>
+        )}
         {statusAction && (
           <div className="space-y-2 rounded-2xl border border-tangerine-100 bg-white/60 p-3">
             <p className="text-sm font-semibold">{statusAction === 'cancelado' ? 'Cancelar boleto' : statusAction === 'baixado' ? 'Baixar boleto (retirado do banco sem pagamento)' : 'Reativar boleto'}</p>
