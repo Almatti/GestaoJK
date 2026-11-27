@@ -118,3 +118,12 @@ select t_assert((select rv.status = 'em_aberto' and rv.paid_amount = 0 and b.sta
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
 select t_expect_error($$select correct_boleto((select (r->>'boleto_id')::uuid from bol5), 'desfazer_protesto', 'x')$$, 'técnico não corrige');
 reset role;
+-- Exclusão de orçamento (somente sem títulos/reservas/entregas)
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+insert into orders (kind, customer_id, installments, payment_method, notes) values ('ponto_fixo', (select id from customers where name = 'Bar Teste Importação'), 1, 'pix', 'orçamento de teste');
+insert into order_items (order_id, product_id, quantity, liters_per_unit, unit_price, unit_cost) select o.id, p.id, 1, 50, 100, 50 from orders o, products p where o.notes = 'orçamento de teste' and p.sku = 'IMP-1';
+select delete_order_draft((select id from orders where notes = 'orçamento de teste'), 'teste');
+select t_assert(not exists (select 1 from orders where notes = 'orçamento de teste') and not exists (select 1 from order_items i where i.unit_price = 100 and i.liters_per_unit = 50 and not exists (select 1 from orders o where o.id = i.order_id)), 'orçamento excluído com itens');
+select t_expect_error($$select delete_order_draft((select id from orders where number = 1), 'x')$$, 'pedido confirmado não é excluído');
+reset role;

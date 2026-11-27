@@ -45,6 +45,7 @@ export function OrderEditorPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const form = useForm<Header>({ defaultValues: { kind: 'ponto_fixo', customer_id: params.get('cliente') ?? '', partner_id: '', campaign_id: '', order_date: todaySP(), delivery_date: '', delivery_time: '', pickup_date: '', delivery_address: '', payment_method: 'boleto', installments: 1, first_due_date: '', discount: 0, freight: 0, equipment_needed: '', notes: '' } });
   const { register, watch, reset, handleSubmit, formState } = form;
@@ -176,7 +177,9 @@ export function OrderEditorPage() {
           <p className="mt-2 text-xs text-cocoa-700">Ao marcar como entregue, a reserva vira saída de estoque (FEFO) e os equipamentos passam à custódia do cliente.</p>
         </Card>
       )}
-      {id && editable && can('pedidos', 'cancel') && <div className="mb-4 flex justify-end"><Button variant="ghost" size="sm" icon={<XCircle className="size-4" />} onClick={() => setCancelOpen(true)}>Cancelar orçamento</Button></div>}
+      {id && editable && can('pedidos', 'cancel') && <div className="mb-4 flex justify-end gap-2"><Button variant="ghost" size="sm" icon={<Trash2 className="size-4" />} onClick={() => setDeleteOpen(true)}>Excluir orçamento</Button></div>}
+      {id && editable && <ConfirmDialog open={deleteOpen} onCancel={() => setDeleteOpen(false)} title="Excluir orçamento?" message="O orçamento e seus itens serão apagados. Como ainda não foi confirmado, não há títulos, pagamentos nem estoque envolvidos." confirmLabel="Excluir" danger
+        onConfirm={async () => { try { await db().rpc('delete_order_draft', { p_order: id, p_reason: 'Excluído pelo usuário' }); invalidate(); toast('Orçamento excluído.'); navigate('/pedidos'); } catch (e) { toast(friendlyError(e), 'danger'); } setDeleteOpen(false); }} />}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
