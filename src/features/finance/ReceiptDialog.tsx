@@ -9,7 +9,7 @@ import type { Row } from '@/data/types';
 import { formatReais } from '@/domain/money';
 import { todaySP } from '@/domain/dates';
 
-export const METHODS = [['pix', 'Pix'], ['boleto', 'Boleto'], ['dinheiro', 'Dinheiro'], ['cartao_credito', 'Cartão de crédito'], ['cartao_debito', 'Cartão de débito'], ['transferencia', 'Transferência'], ['cheque', 'Cheque'], ['outro', 'Outro']].map(([value, label]) => ({ value: value!, label: label! }));
+export const METHODS = [['pix', 'Pix'], ['boleto', 'Boleto'], ['dinheiro', 'Dinheiro'], ['cartao_credito', 'Cartão de crédito'], ['cartao_debito', 'Cartão de débito'], ['transferencia', 'Transferência'], ['cheque', 'Cheque'], ['cartorio', 'Pago no cartório'], ['outro', 'Outro']].map(([value, label]) => ({ value: value!, label: label! }));
 
 /** Registro de recebimento (total ou parcial) com encargos calculados no servidor. */
 export function ReceiptDialog({ receivable, open, onClose }: { receivable: Row | null; open: boolean; onClose: () => void }) {

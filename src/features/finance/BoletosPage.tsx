@@ -10,30 +10,36 @@ import { Attachments } from '@/components/ui/Attachments';
 import { ReceiptDialog } from './ReceiptDialog';
 import { ProtestDialog } from './ProtestsPage';
 import { useProtestMap } from './ReceivableStatusBadge';
-import { combinedStatus, PROTEST_STATUS, type FinancialStatus, type ProtestStatus } from '@/domain/collections';
+import { PROTEST_STATUS, type ProtestStatus } from '@/domain/collections';
+import { BOLETO_STATUS, boletoStatus, notaryReleasePath, type BoletoStatusKey } from '@/domain/boletoStatus';
 import { Modal } from '@/components/ui/Overlay';
 import { SelectInput, TextInput } from '@/components/ui/Form';
 import { useToast } from '@/components/ui/Toast';
 import { formatReais } from '@/domain/money';
-import { addDays, formatDateBR, todaySP } from '@/domain/dates';
+import { addDays, diffDays, formatDateBR, nextBusinessDay, todaySP } from '@/domain/dates';
 import { BANKS, BoletoError, extractBoletoHints, findBoletoInText, parseBoleto, type BoletoInfo } from '@/domain/boleto';
 import { formatDocument } from '@/domain/documents';
 import { calculateCharges, chargeRulesFromRow, plannedProtestDate } from '@/domain/collections';
 import { toCents } from '@/domain/money';
 import { extractPdf } from '@/lib/pdfText';
 
-type BoletoFilter = 'todos' | 'aberto' | 'vencido' | 'pago' | 'protesto' | 'pendencia' | 'cancelado';
-const FILTERS: [BoletoFilter, string][] = [['todos', 'Todos'], ['aberto', 'Em aberto'], ['vencido', 'Vencidos'], ['pago', 'Pagos'], ['protesto', 'Em protesto'], ['pendencia', 'Pago c/ pendência no cartório'], ['cancelado', 'Cancelados/baixados']];
+type BoletoFilter = 'todos' | BoletoStatusKey;
+const FILTERS: [BoletoFilter, string][] = [['todos', 'Todos'], ['em_aberto', 'Em aberto'], ['vencido', 'Vencido'], ['protesto', 'Protesto'], ['pago_em_protesto', 'Pago/ainda em protesto'], ['pago', 'Pago'], ['cancelado', 'Cancelado']];
+const METHOD_LABEL: Record<string, string> = { pix: 'Pix', boleto: 'boleto', dinheiro: 'dinheiro', cartao_credito: 'cartão de crédito', cartao_debito: 'cartão de débito', transferencia: 'transferência', cheque: 'cheque', cartorio: 'no cartório', outro: 'outra forma' };
 
-/** Situação exibida do boleto: situação do boleto + situação financeira do título + situação cartorária. */
-function boletoSituation(b: Row, r: Row | undefined, protest: ProtestStatus) {
-  if (b.status === 'cancelado') return { label: 'Boleto cancelado', tone: 'neutral' as const, detail: 'Boleto cancelado no sistema.', key: 'cancelado' as BoletoFilter };
-  if (b.status === 'baixado') return { label: 'Boleto baixado', tone: 'neutral' as const, detail: 'Retirado do banco sem pagamento.', key: 'cancelado' as BoletoFilter };
-  const fin = ((r?.financial_status as FinancialStatus) ?? 'em_aberto');
-  const s = combinedStatus(fin, protest, r?.payment_method === 'pix' ? 'Pix' : (r?.payment_method as string | null));
-  const key: BoletoFilter = s.financialSettled && s.cartorialPending ? 'pendencia' : s.cartorialPending ? 'protesto' : fin === 'pago' ? 'pago' : fin === 'vencido' ? 'vencido' : fin === 'cancelado' ? 'cancelado' : 'aberto';
-  const late = fin === 'vencido' && Number(r?.days_overdue) > 0 ? ` (${String(r?.days_overdue)} dia(s))` : '';
-  return { label: `${s.label}${late}`, tone: s.tone, detail: s.detail, key };
+/** Uma das 6 situações + detalhe (forma de pagamento, dias de atraso, etapa no cartório). */
+function boletoSituation(b: Row, r: Row | undefined, protest: ProtestStatus, holidays: ReadonlySet<string> = new Set()) {
+  // Vencimento em fim de semana/feriado pode ser pago no próximo dia útil sem atraso.
+  const due = nextBusinessDay(String(b.due_date ?? r?.due_date ?? ''), holidays);
+  const key = boletoStatus({ boletoStatus: String(b.status), receivableStatus: String(r?.status ?? 'em_aberto'), dueDate: due, today: todaySP(), protest: protest === 'nao_encaminhado' ? null : protest });
+  const def = BOLETO_STATUS[key];
+  const extra: string[] = [];
+  if ((key === 'pago' || key === 'pago_em_protesto') && r?.payment_method) extra.push(`recebido via ${METHOD_LABEL[String(r.payment_method)] ?? String(r.payment_method)}`);
+  if (key === 'vencido') extra.push(`${diffDays(due, todaySP())} dia(s) de atraso`);
+  if (key === 'em_aberto' && r?.status === 'parcialmente_pago') extra.push('pagamento parcial');
+  if ((key === 'protesto' || key === 'pago_em_protesto') && protest) extra.push(`cartório: ${PROTEST_STATUS[protest]}`);
+  if (key === 'cancelado' && b.status === 'baixado') extra.push('baixado no banco sem pagamento');
+  return { key, label: def.label, tone: def.tone, detail: `${def.help}${extra.length ? ` (${extra.join(' · ')})` : ''}`, sub: extra.join(' · ') };
 }
 
 /** Boletos emitidos no banco e cadastrados no sistema. Sem integração bancária, NADA é emitido pelo sistema. */
@@ -54,7 +60,7 @@ export function BoletosPage() {
   const toast = useToast();
   const rows = (boletos.data?.rows ?? []).map((b) => {
     const r = byId.get(String(b.receivable_id));
-    return { b, r, s: boletoSituation(b, r, protests.get(String(b.receivable_id)) ?? 'nao_encaminhado') };
+    return { b, r, s: boletoSituation(b, r, protests.get(String(b.receivable_id)) ?? 'nao_encaminhado', hol) };
   });
   const term = q.trim().toLowerCase();
   const visible = rows.filter(({ b, r, s }) => (filter === 'todos' || s.key === filter) && (!term || [b.document_number, b.your_number, b.our_number, b.digitable_line, r?.customer_name, r?.customer_trade_name].some((x) => String(x ?? '').toLowerCase().includes(term))));
@@ -90,7 +96,7 @@ export function BoletosPage() {
                 <td className="num whitespace-nowrap px-4 py-3 text-right">{formatReais(b.original_amount as number)}</td>
                 <td className="num whitespace-nowrap px-4 py-3 text-right">{formatReais(r?.outstanding as number)}{(() => { const c = updatedCharges(b, r, hol); return c && c.total > c.principal ? <span className="block text-xs font-semibold text-red-700" title={`Multa ${formatReais(c.fine / 100)} + juros ${formatReais(c.interest / 100)} (${c.daysLate} dia(s))`}>Atualizado {formatReais(c.total / 100)}</span> : null; })()}</td>
                 <td className="whitespace-nowrap px-4 py-3">{b.planned_protest_date ? formatDateBR(b.planned_protest_date as string) : '—'}</td>
-                <td className="px-4 py-3"><span title={s.detail}><Badge tone={s.tone}>{s.label}</Badge></span></td>
+                <td className="px-4 py-3"><span title={s.detail}><Badge tone={s.tone}>{s.label}</Badge></span>{s.sub ? <span className="mt-1 block text-xs text-cocoa-700">{s.sub}</span> : null}</td>
                 <td className="whitespace-nowrap px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   {b.digitable_line ? <Button size="sm" variant="ghost" icon={<Copy className="size-4" />} onClick={() => navigator.clipboard.writeText(String(b.digitable_line)).then(() => toast('Linha digitável copiada.'))}>Linha</Button> : null}
                   {withPdf.has(String(b.id)) && <Button size="sm" variant="ghost" icon={<Download className="size-4" />} onClick={() => void downloadBoletoPdf(String(b.id), toast)}>PDF</Button>}
@@ -177,6 +183,20 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
       toast(friendlyError(e), 'danger');
     }
   };
+  /** Cliente já deu baixa no cartório: avança as etapas válidas até "Protesto cancelado" (ou "Retirado"). */
+  const releaseNotary = async () => {
+    if (!p) return;
+    const path = notaryReleasePath(p.status as ProtestStatus);
+    if (!path.length) return;
+    if (!confirm('Confirmar que o título já saiu do cartório (cliente pagou as custas e deu baixa)?')) return;
+    try {
+      for (const st of path) await db().update('protest_records', String(p.id), { status: st, notes: 'Baixa no cartório confirmada', ...(st === 'protesto_cancelado' || st === 'retirado' ? { cancellation_requested_at: todaySP() } : {}) });
+      invalidate();
+      toast(r?.status === 'pago' ? 'Baixa no cartório registrada. O boleto agora aparece como "Pago".' : 'Baixa no cartório registrada.');
+    } catch (e) {
+      toast(friendlyError(e), 'danger');
+    }
+  };
   const scheduleProtest = async () => {
     try {
       await db().insert('protest_records', { receivable_id: b.receivable_id, boleto_id: b.id, status: 'programado', planned_date: b.planned_protest_date ?? null });
@@ -190,7 +210,7 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
   return (
     <Modal open onClose={onClose} drawer title={`Boleto ${b.document_number ? `nº ${String(b.document_number)}` : String(b.our_number ?? '')}`}>
       <div className="space-y-4">
-        <Alert tone={situation.tone === 'neutral' ? 'info' : situation.tone} title={situation.label}>{situation.detail}{p ? ` Cartório: ${PROTEST_STATUS[p.status as ProtestStatus]}.` : ''}</Alert>
+        <Alert tone={situation.tone === 'neutral' ? 'info' : situation.tone} title={situation.label}>{situation.detail}</Alert>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
           <div className="col-span-2"><dt className="text-xs text-cocoa-700">Cliente</dt><dd className="font-semibold">{String(r?.customer_trade_name ?? r?.customer_name ?? '—')}</dd></div>
           <div><dt className="text-xs text-cocoa-700">Nº do documento</dt><dd>{String(b.document_number ?? '—')}</dd></div>
@@ -220,7 +240,8 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
 
         <div className="flex flex-wrap gap-2">
           {open && (can('financeiro', 'create') || can('cobranca', 'edit')) && <Button icon={<CheckCircle2 className="size-4" />} onClick={() => setReceipt(true)}>Registrar pagamento</Button>}
-          {p ? <Button variant="secondary" icon={<Landmark className="size-4" />} onClick={() => setProtestOpen(true)}>Protesto: {PROTEST_STATUS[p.status as ProtestStatus]}</Button>
+          {p && situation.key === 'pago_em_protesto' && notaryReleasePath(p.status as ProtestStatus).length > 0 && can('cobranca', 'edit') && <Button icon={<CheckCircle2 className="size-4" />} onClick={releaseNotary}>Cliente deu baixa no cartório</Button>}
+          {p ? <Button variant="secondary" icon={<Landmark className="size-4" />} onClick={() => setProtestOpen(true)}>{situation.key === 'pago_em_protesto' || situation.key === 'protesto' ? 'Cartório / carta de anuência' : `Protesto: ${PROTEST_STATUS[p.status as ProtestStatus]}`}</Button>
             : <>
               {active && open && can('cobranca', 'create') && <Button variant="secondary" icon={<CalendarClock className="size-4" />} onClick={scheduleProtest}>Programar protesto</Button>}
               {b.status !== 'cancelado' && can('cobranca', 'create') && <Button variant="secondary" icon={<Landmark className="size-4" />} onClick={() => setInNotary(true)}>Já está no cartório</Button>}
@@ -231,12 +252,15 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
           </>}
           {(b.status === 'cancelado' || b.status === 'baixado') && (can('cobranca', 'cancel') || can('financeiro', 'cancel')) && <Button variant="ghost" icon={<RotateCcw className="size-4" />} onClick={() => setStatusAction('registrado')}>Reativar boleto</Button>}
         </div>
-        {r?.status === 'pago' && p && ['encaminhado', 'em_cartorio', 'protestado', 'aguardando_anuencia', 'aguardando_cancelamento', 'cancelamento_solicitado'].includes(String(p.status)) && (
-          <Alert tone="warning" title="Pago, mas ainda no cartório">
-            Não cobre de novo e não cancele nem baixe o boleto.{' '}
-            {['encaminhado', 'em_cartorio'].includes(String(p.status))
-              ? 'Como o protesto ainda não foi lavrado, peça ao banco a retirada (desistência) e toque em "Protesto" → "Retirado". As custas da desistência, se houver, ficam com o cliente.'
-              : 'Toque em "Protesto" → "Aguardando anuência" → "Gerar declaração de anuência (PDF)" e entregue ao cliente. Ele vai ao cartório, paga as custas e tira o protesto; depois marque "Cancelamento solicitado" e, por fim, "Protesto cancelado".'}
+        {situation.key === 'pago_em_protesto' && p && (
+          <Alert tone="warning" title="O que fazer">
+            1) Não cobre de novo nem cancele o boleto. 2) Em "Cartório / carta de anuência", gere a carta de anuência e entregue ao cliente.
+            3) O cliente vai ao cartório, paga as custas e dá baixa. 4) Quando ele confirmar, toque em "Cliente deu baixa no cartório" — o boleto passa para "Pago".
+          </Alert>
+        )}
+        {situation.key === 'protesto' && (
+          <Alert tone="danger" title="No cartório">
+            Não dá mais para receber pelo banco. Se o cliente te pagar (ex.: Pix), use "Registrar pagamento" — o boleto vai para "Pago/ainda em protesto" e ele precisa da carta de anuência para dar baixa no cartório.
           </Alert>
         )}
 

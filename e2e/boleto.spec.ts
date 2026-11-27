@@ -75,7 +75,7 @@ test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencime
   await page.getByRole('button', { name: 'Registrar', exact: true }).click();
   await expect(page.getByText(/Título quitado/)).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /^Pagos/ }).click();
+  await page.getByRole('button', { name: /^Pago \(/ }).click();
   await expect(page.getByRole('row', { name: /000068/ }).getByText(/Pago/)).toBeVisible();
 
   // Pago via Pix, mas o título já estava protestado no cartório
@@ -83,10 +83,19 @@ test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencime
   await page.getByRole('button', { name: 'Já está no cartório' }).click();
   await page.getByLabel('Etapa atual no cartório').selectOption('protestado');
   await page.getByRole('button', { name: 'Registrar', exact: true }).click();
-  await expect(page.getByText(/Pago, mas ainda em protesto/).first()).toBeVisible();
-  await expect(page.getByText(/Aguardando anuência/).first()).toBeVisible();
+  await expect(page.getByText('Pago/ainda em protesto').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cliente deu baixa no cartório' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /Pago c\/ pendência no cartório/ }).click();
+  await page.getByRole('button', { name: /^Pago\/ainda em protesto/ }).click();
+  await expect(page.getByRole('row', { name: /000068/ })).toBeVisible();
+
+  // Cliente deu baixa no cartório → volta a "Pago"
+  await page.getByRole('row', { name: /000068/ }).getByRole('button', { name: 'Gerenciar' }).click();
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('button', { name: 'Cliente deu baixa no cartório' }).click();
+  await expect(page.getByText(/agora aparece como "Pago"/)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /^Pago \(/ }).click();
   await expect(page.getByRole('row', { name: /000068/ })).toBeVisible();
   expect(errors.filter((e) => !/favicon|manifest/i.test(e))).toEqual([]);
 });
