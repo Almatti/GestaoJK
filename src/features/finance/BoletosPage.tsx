@@ -271,7 +271,11 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
     if (file.size > 15 * 1024 * 1024) return toast('PDF maior que 15 MB.', 'danger');
     setBusy('pdf');
     try {
-      const { text, items } = await extractPdf(file);
+      // Android (Chrome) recusa reenviar arquivos vindos de Downloads/Drive/WhatsApp depois de lidos
+      // (ERR_UPLOAD_FILE_CHANGED). Copiamos o conteúdo para a memória uma única vez e usamos a cópia.
+      const copy = new File([await file.arrayBuffer()], file.name, { type: file.type || 'application/pdf' });
+      file = copy;
+      const { text, items } = await extractPdf(copy);
       const b = findBoletoInText(text, todaySP());
       setPdf(file);
       if (!b) {
@@ -311,9 +315,16 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
     setBusy('save');
     try {
       let filePath = '';
+      let pdfWarning = '';
       if (pdf && db().mode === 'supabase') {
-        filePath = `boleto/${crypto.randomUUID()}-${pdf.name.normalize('NFD').replace(/[^\w.-]+/g, '_').slice(-80)}`;
-        await db().storage.upload(filePath, pdf);
+        // O boleto é salvo mesmo se o envio do PDF falhar (rede instável); o PDF pode ser anexado depois.
+        const path = `boleto/${crypto.randomUUID()}-${pdf.name.normalize('NFD').replace(/[^\w.-]+/g, '_').slice(-80)}`;
+        try {
+          await Promise.race([db().storage.upload(path, pdf), new Promise((_, rej) => setTimeout(() => rej(new Error('tempo esgotado')), 45_000))]);
+          filePath = path;
+        } catch (e) {
+          pdfWarning = ` O PDF não foi enviado (${friendlyError(e)}): abra o boleto em "Gerenciar" e anexe novamente.`;
+        }
       }
       const r = await db().rpc<{ boleto_id: string; receivable_created: boolean }>('create_boleto', {
         p_customer: customerId || null, p_receivable: isNew ? null : receivableId, p_description: description || null,
@@ -323,7 +334,7 @@ function BoletoForm({ onClose }: { onClose: () => void }) {
         await db().insert('attachments', { entity_type: 'boleto', entity_id: r.boleto_id, storage_path: filePath, file_name: pdf.name, mime_type: pdf.type || 'application/pdf', size_bytes: pdf.size, category: 'boleto' });
       }
       invalidate();
-      toast(r.receivable_created ? 'Boleto cadastrado e conta a receber criada.' : 'Boleto cadastrado e vinculado ao título.');
+      toast(`${r.receivable_created ? 'Boleto cadastrado e conta a receber criada.' : 'Boleto cadastrado e vinculado ao título.'}${pdfWarning}`, pdfWarning ? 'warning' : 'success');
       onClose();
     } catch (e) {
       toast(friendlyError(e), 'danger');

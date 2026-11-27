@@ -79,3 +79,21 @@ test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencime
   await expect(page.getByRole('row', { name: /000068/ }).getByText(/Pago/)).toBeVisible();
   expect(errors.filter((e) => !/favicon|manifest/i.test(e))).toEqual([]);
 });
+
+test('avisos aparecem POR CIMA da janela aberta (ex.: faltou o cliente ao salvar)', async ({ page }) => {
+  await login(page);
+  await page.goto('/financeiro/boletos');
+  await page.getByRole('button', { name: 'Cadastrar boleto' }).click();
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  const toast = page.getByText('Selecione o cliente do boleto.');
+  await expect(toast).toBeVisible();
+  // Janela modal fica na camada superior do navegador; o aviso precisa estar nela também (popover aberto),
+  // senão fica desenhado POR TRÁS da janela (era o "clico em salvar e nada acontece").
+  const inTopLayer = await toast.evaluate((el) => !!el.closest('[popover]')?.matches(':popover-open'));
+  expect(inTopLayer).toBe(true);
+  const box = (await toast.boundingBox())!;
+  const shot = await page.screenshot({ clip: { x: box.x, y: box.y, width: Math.min(box.width, 120), height: box.height } });
+  const own = await toast.screenshot();
+  expect(shot.length).toBeGreaterThan(0);
+  expect(own.length).toBeGreaterThan(0);
+});
