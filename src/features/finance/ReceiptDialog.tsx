@@ -35,7 +35,9 @@ export function ReceiptDialog({ receivable, open, onClose }: { receivable: Row |
   const fine = v.applyCharges ? Number(charges?.fine ?? 0) : 0;
   const interest = v.applyCharges ? Number(charges?.interest ?? 0) : 0;
 
+  const settled = outstanding <= 0 || receivable.status === 'pago';
   const submit = async () => {
+    if (settled) return toast('Este título já está quitado: não há saldo para registrar.', 'warning');
     const amount = Number(v.amount);
     if (!(amount > 0)) return toast('Informe um valor válido.', 'warning');
     setBusy(true);
@@ -56,8 +58,9 @@ export function ReceiptDialog({ receivable, open, onClose }: { receivable: Row |
 
   return (
     <Modal open={open} onClose={onClose} title="Registrar recebimento" description={String(receivable.description)} size="md"
-      footer={<><Button variant="secondary" onClick={onClose}>Cancelar</Button><Button loading={busy} onClick={submit}>Registrar</Button></>}>
+      footer={<><Button variant="secondary" onClick={onClose}>Cancelar</Button><Button loading={busy} disabled={settled} onClick={submit}>Registrar</Button></>}>
       <div className="space-y-4">
+        {settled && <Alert tone="success" title="Título já quitado">Não há saldo em aberto: o pagamento deste título já está registrado.</Alert>}
         <div className="grid grid-cols-3 gap-2 rounded-2xl bg-cream-100 p-3 text-center text-sm">
           <div><p className="text-xs text-cocoa-700">Em aberto</p><p className="num font-bold">{formatReais(outstanding)}</p></div>
           <div><p className="text-xs text-cocoa-700">Multa + juros</p><p className="num font-bold">{formatReais(Number(charges?.fine ?? 0) + Number(charges?.interest ?? 0))}</p></div>
