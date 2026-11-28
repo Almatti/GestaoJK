@@ -12,8 +12,9 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/features/auth/AuthContext';
 import { centsToDecimal, formatReais, toCents } from '@/domain/money';
 import { todaySP } from '@/domain/dates';
-import { FESTA_METHODS, FESTA_PAYMENT_KINDS, FESTA_UNITS, festaMissingFields, festaTotals, itemTotalCents, parseFestaPdf, scheduleError, type FestaExtraction } from '@/domain/festas';
+import { FESTA_METHODS, FESTA_PAYMENT_KINDS, FESTA_UNITS, extractFestaFromLines, festaMissingFields, festaTotals, itemTotalCents, parseFestaPdf, scheduleError, type FestaExtraction } from '@/domain/festas';
 import { extractPdf } from '@/lib/pdfText';
+import { ocrPdfLines } from '@/lib/ocr';
 import { FestasDataNotice, attachFile, num, sha256Hex } from './shared';
 
 interface Header {
@@ -52,6 +53,7 @@ export function FestaFormPage({ mode }: { mode: 'novo' | 'editar' | 'importar' }
   const [pdf, setPdf] = useState<PdfState | null>(null);
   const [duplicate, setDuplicate] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(!isEdit);
   const [received, setReceived] = useState(0);
@@ -104,10 +106,26 @@ export function FestaFormPage({ mode }: { mode: 'novo' | 'editar' | 'importar' }
       const bytes = await file.arrayBuffer();
       const copy = new File([bytes], file.name, { type: 'application/pdf' });
       const sha = await sha256Hex(bytes);
-      const dup = await db().list<Row>('festa_events', { select: 'id,code', filters: [{ column: 'source_sha256', op: 'eq', value: sha }] });
-      if (dup.rows.length) setDuplicate(String(dup.rows[0]!.code ?? 'já cadastrada'));
+      // Checagem antecipada (o banco também impede o duplicado ao salvar). Falha de consulta não impede a leitura.
+      try {
+        const dup = await db().list<Row>('festa_events', { select: 'id,code', filters: [{ column: 'source_sha256', op: 'eq', value: sha }] });
+        if (dup.rows.length) setDuplicate(String(dup.rows[0]!.code ?? 'já cadastrada'));
+      } catch {
+        /* segue: o salvamento verifica no servidor */
+      }
       const { text, items: pdfItems } = await extractPdf(copy, 5);
-      const ex = parseFestaPdf(text, pdfItems);
+      const hasText = text.replace(/\s+/g, '').length >= 40;
+      let ex: FestaExtraction;
+      if (hasText) {
+        ex = parseFestaPdf(text, pdfItems);
+      } else {
+        // PDF digitalizado (imagem): reconhecimento de texto no próprio aparelho.
+        setProgress('Arquivo digitalizado: reconhecendo o texto…');
+        const lines = await ocrPdfLines(copy, 2, setProgress);
+        ex = extractFestaFromLines(lines);
+        ex.warnings.unshift('PDF digitalizado (imagem): os dados foram reconhecidos automaticamente. Confira todos os valores antes de salvar.');
+      }
+      setProgress(null);
       setPdf({ file: copy, name: file.name, sha, extraction: ex });
       setHeader((h) => ({
         client_name: ex.client_name || h.client_name, client_phone: ex.client_phone || h.client_phone, event_name: ex.event_name || h.event_name,
@@ -176,7 +194,7 @@ export function FestaFormPage({ mode }: { mode: 'novo' | 'editar' | 'importar' }
           <label htmlFor="festa-pdf" className="inline-flex cursor-pointer items-center gap-2 rounded-control bg-tangerine-700 px-4 py-2.5 text-sm font-semibold text-white shadow-soft hover:bg-tangerine-800">
             <FileUp className="size-4" />{pdf ? 'Trocar PDF' : 'Escolher PDF do pedido'}
           </label>
-          {reading && <span className="text-sm text-cocoa-700">Lendo o PDF no seu aparelho…</span>}
+          {reading && <span className="text-sm text-cocoa-700">{progress ?? 'Lendo o PDF no seu aparelho…'}</span>}
           {pdf && !reading && <span className="text-sm text-cocoa-700">{pdf.name}</span>}
         </div>
         <p className="mt-3 text-xs text-cocoa-700">O arquivo é lido no próprio navegador e guardado como anexo da festa. Nenhum conteúdo é enviado a terceiros.</p>

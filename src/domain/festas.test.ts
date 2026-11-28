@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  festaDueBalanceDate, festaFinancialStatus, festaMissingFields, festaTotals, itemTotalCents, linesFromItems,
+  extractFestaFromLines, festaDueBalanceDate, festaFinancialStatus, festaMissingFields, festaTotals, itemTotalCents, linesFromItems,
   moneyToCents, parseFestaPdf, planningGroups, reminderDays, scheduleError, type PlanningRow
 } from './festas';
 import type { PdfTextItem } from './boleto';
@@ -142,7 +142,7 @@ describe('festas — leitura do PDF do pedido', () => {
   it('avisa quando quantidade × valor não bate com o total da linha', () => {
     const r = parseFestaPdf('Chopp Pilsen 50L 2 x R$ 400,00 R$ 700,00');
     expect(r.items).toHaveLength(1);
-    expect(r.warnings.some((w) => w.includes('difere'))).toBe(true);
+    expect(r.warnings.some((w) => w.includes('ajustado') || w.includes('difere'))).toBe(true);
   });
 
   it('reconstrói as linhas pela posição dos trechos', () => {
@@ -154,5 +154,80 @@ describe('festas — leitura do PDF do pedido', () => {
   it('converte valores em reais para centavos', () => {
     expect(moneyToCents('R$ 1.234,56')).toBe(123456);
     expect(moneyToCents('945,00')).toBe(94500);
+  });
+});
+
+describe('festas — orçamento real digitalizado (texto reconhecido por OCR)', () => {
+  // Texto reconhecido por OCR de um orçamento JK CHOPP (nome do cliente fictício). Inclui ruídos típicos do OCR.
+  const OCR_LINES = [
+  'EG Telefone: 18996305019 ORC-000004',
+  'Email: central.jdkchopp(Ogmail.com',
+  'CNPJ: 65.824.342/0001-71 Rascunho — Parcialmente pago',
+  'Emissão: 26/11/2026',
+  'CLIENTE EVENTO',
+  'Nome: Cliente Exemplo Data: 28/11/2026',
+  'ITENS',
+  'MW ITENS DE VENDA',
+  'Descrição / Composição otd. V. Unit. V. Emb. Total',
+  'Original 600ml',
+  '4 Caixas x 24 = 96 un. 96 R$ 10,00 R$ 240,00 R$ 960,00',
+  '4x R$240,00',
+  'Heineken 600ml',
+  '4 Caixas x 24 = 96 un. 9% R$ 12,00 R$28800 —R$1.152,00',
+  '4x R$288,00',
+  'MN ITENS EM CONSIGNAÇÃO',
+  'Descrição / Composição otd. V. Unit. V. Emb. Total',
+  'Coca cola Original 2L',
+  '6 un.',
+  '6x R$13,00 6 R$13,00 - R$78,00',
+  'Consignação — valor estimado. Definitivo conforme consumo apurado no fechamento.',
+  'Coca cola Zero 2L',
+  '6 un.',
+  '6x R$13,00 6 R$13,00 - R$78,00',
+  'Consignação — valor estimado. Definitivo conforme consumo apurado no fechamento.',
+  'Guaraná Antártica 2L',
+  'un 6 R$11,00 - R$ 66,00',
+  '6x R$11,00',
+  'Consignação — valor estimado. Definitivo conforme consumo apurado no fechamento.',
+  'Água sem Gás 500ml',
+  '10 Fardos x12= 120 un 120 R$200 — R$2400 — R$240,00',
+  '120 x R$ 2,00',
+  'Consignação — valor estimado. Definitivo conforme consumo apurado no fechamento.',
+  'Subtotal venda: R$2.112,00 ADIANTAMENTO',
+  'Consignação (estimado): R$ 462,00 Percentual exigido: 70%',
+  'TOTAL ESTIMADO: R$ 2.574,00 Adiantamento originalmente exigido: R$ 1.801,80',
+  'Valor antecipado recebido: R$ 1.800,00',
+  'Restante do adiantamento: R$ 1,80',
+  'PAGAMENTOS',
+  '26/11/26 Pix R$ 1.800,00',
+  'Total pago: R$ 1.800,00',
+  'SALDO TOTAL: R$774,00',
+  'DADOS PARA NOTA FISCAL',
+  'CONDIÇÕES COMERCIAIS',
+  'Os itens consignados serão cobrados conforme o consumo real. O valor adiantado será abatido do fechamento final. Produtos não consumidos deverão ser devolvidos',
+  'conforme as condições combinadas.',
+  'JK CHOPP Cliente Exemplo',
+  ];
+
+  it('lê cliente, data, número, itens (vendas e consignação), total e pagamentos', () => {
+    const r = extractFestaFromLines(OCR_LINES);
+    expect(r.client_name).toBe('Cliente Exemplo');
+    expect(r.event_date).toBe('2026-11-28');
+    expect(r.client_phone).toBe('');
+    expect(r.notes).toContain('ORC-000004');
+    expect(r.total).toBe('2574.00');
+    expect(r.items.map((i) => i.product_name)).toEqual(['Original 600ml', 'Heineken 600ml', 'Coca cola Original 2L', 'Coca cola Zero 2L', 'Guaraná Antártica 2L', 'Água sem Gás 500ml']);
+    expect(r.items.map((i) => [i.quantity, i.unit_price, i.line_total])).toEqual([
+      ['96', '10', '960'], ['96', '12', '1152'], ['6', '13', '78'], ['6', '13', '78'], ['6', '11', '66'], ['120', '2', '240']
+    ]);
+    expect(r.items.every((i) => i.unit === 'unidade')).toBe(true);
+    expect(r.payments).toEqual([
+      { kind: 'entrada', amount: '1800.00', due_date: '2026-11-26', method: 'pix' },
+      { kind: 'saldo', amount: '774.00', due_date: '', method: '' }
+    ]);
+    expect(r.warnings.some((w) => w.includes('consignação'))).toBe(true);
+    expect(r.warnings.some((w) => w.includes('previsto'))).toBe(true);
+    expect(r.warnings.some((w) => w.includes('Soma dos itens'))).toBe(false);
+    expect(r.warnings.some((w) => w.includes('Água sem Gás'))).toBe(true);
   });
 });

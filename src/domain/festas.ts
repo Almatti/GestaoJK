@@ -4,7 +4,7 @@
  * Valores em centavos inteiros aqui; NUMERIC no banco. Pagamento só é "recebido" depois de confirmado.
  */
 import { roundHalfAwayFromZero, sumCents, toCents, type Cents } from './money';
-import { parseDateBR, type ISODate } from './dates';
+import type { ISODate } from './dates';
 import type { PdfTextItem } from './boleto';
 
 export const FESTA_OPS_STATUS = [
@@ -275,64 +275,177 @@ const METHOD_MAP: [RegExp, string][] = [
   [/transfer/i, 'transferencia'], [/cheque/i, 'cheque']
 ];
 
+const COMPOSITION = /(×|\bx\b|\bun\b|\bunid|caixa|fardo|\s=\s|consigna|descri|\bitens\b)/i;
+
+/** "1.152,00" ou "2400" → número. */
+function brNumber(tok: string): number {
+  return Number(tok.replace(/\./g, '').replace(',', '.'));
+}
+
+/** "26/11/26" ou "26/11/2026" → ISO (ou '' se inválida). */
+function brDateToIso(v: string): string {
+  const m = v.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})$/);
+  if (!m) return '';
+  const year = m[3]!.length === 2 ? `20${m[3]}` : m[3]!;
+  return `${year}-${m[2]}-${m[1]}`;
+}
+
+interface ParsedRow { qty: number; unit: number; total: number; pre: string; unitFixed: boolean }
+
+/**
+ * Linha de item: valores em R$ (unitário e total; a embalagem é ignorada). A quantidade é o número logo antes
+ * do primeiro valor; se o OCR a deformar, ela é deduzida do total ÷ unitário. Se a conta não fechar, o
+ * unitário é recalculado a partir do total ÷ quantidade (sinalizado para conferência).
+ */
+function parseItemRow(line: string): ParsedRow | null {
+  const money = [...line.matchAll(/R\$\s*(\d[\d.]*(?:,\d{1,2})?)/g)];
+  if (money.length < 2) return null;
+  const before = line.slice(0, money[0]!.index).trim();
+  const qMatch = before.match(/(\d+(?:[.,]\d+)?)\s*(?:x\s*)?$/i);
+  let qty = qMatch ? Number(qMatch[1]!.replace(',', '.')) : 0;
+  let unit = brNumber(money[0]![1]!);
+  const total = brNumber(money[money.length - 1]![1]!);
+  let unitFixed = false;
+  if (!(qty > 0) && unit > 0) {
+    const d = total / unit;
+    if (Math.abs(d - Math.round(d)) < 0.01) qty = Math.round(d);
+  }
+  if (!(qty > 0)) return null;
+  if (Math.abs(qty * unit - total) > 0.5 && total / qty <= 100000) {
+    const fixed = Math.round((total / qty) * 100) / 100;
+    if (Math.abs(qty * fixed - total) <= 0.5) { unit = fixed; unitFixed = true; }
+  }
+  const pre = (qMatch ? before.slice(0, before.length - qMatch[0].length) : before.replace(/[\d%\s]+$/, '')).trim();
+  return { qty, unit, total, pre, unitFixed };
+}
+
+/** Nome do produto: texto antes da quantidade ou a linha acima (ignorando linhas de composição). */
+function productName(lines: string[], index: number, pre: string): string {
+  if (pre && !COMPOSITION.test(pre)) return pre;
+  for (let j = index - 1; j >= 0 && j >= index - 4; j--) {
+    const c = lines[j]!;
+    if (c.length >= 3 && !COMPOSITION.test(c) && !/R\$|\d{2}\/\d{2}/.test(c)) return c;
+  }
+  return '';
+}
+
 /** Interpreta o texto do pedido. Campos ausentes ficam vazios; itens e pagamentos vêm para conferência. */
-export function extractFestaFromLines(lines: string[]): FestaExtraction {
+export function extractFestaFromLines(rawLines: string[]): FestaExtraction {
+  const lines = rawLines.map((l) => l.replace(/R\$\s*/g, 'R$').replace(/\s+/g, ' ').trim()).filter(Boolean);
   const r: FestaExtraction = {
-    client_name: findText(lines, /cliente|contratante|nome do cliente/),
-    client_phone: '', event_name: findText(lines, /nome do evento|evento|festa|tipo de evento/),
-    event_date: '', event_time: '', address: findText(lines, /endere[çc]o|local do evento|local/),
-    notes: findText(lines, /observa[çc][õo]es?/), discount_amount: findMoney(lines, /desconto/i),
-    surcharge_amount: findMoney(lines, /acr[ée]scimo|taxa de servi[çc]o/i), total: findMoney(lines, /total(?: do pedido| geral| a pagar)?/i),
-    items: [], payments: [], found: [], warnings: []
+    client_name: '', client_phone: '', event_name: '', event_date: '', event_time: '', address: '', notes: '',
+    discount_amount: '', surcharge_amount: '', total: '', items: [], payments: [], found: [], warnings: []
   };
 
-  const phoneLine = lines.find((l) => /(telefone|celular|whatsapp|fone|contato)/i.test(l)) ?? lines.join(' ');
-  const phone = phoneLine.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
-  if (phone) r.client_phone = phone[0].replace(/\s+/g, ' ').trim();
+  // Cliente: "Nome: ..." (orçamentos) ou rótulos genéricos
+  const nameLine = lines.map((l) => l.match(/\bNome\s*:\s*(.+?)(?=\s+(?:Data|Telefone|Tel|E-?mail|CPF|CNPJ|Endere[çc]o)\s*:|$)/i)?.[1]).find(Boolean);
+  r.client_name = (nameLine ?? '').trim() || findText(lines, /cliente|contratante|nome do cliente/);
+  r.event_name = findText(lines, /nome do evento|evento|festa|tipo de evento/);
+  r.address = findText(lines, /endere[çc]o|local do evento|local/);
 
-  const dateLabel = lines.find((l) => /data( do evento| da festa)?\s*[:-]/i.test(l));
-  const dateMatch = (dateLabel ?? lines.join(' ')).match(/\d{2}\/\d{2}\/\d{4}/);
-  if (dateMatch) r.event_date = parseDateBR(dateMatch[0]) ?? '';
+  // Telefone do CLIENTE: depois do bloco "CLIENTE" (o telefone do topo do documento costuma ser da empresa)
+  const clienteAt = lines.findIndex((l) => /\bCLIENTE\b/.test(l));
+  const phoneScope = clienteAt >= 0 ? lines.slice(clienteAt) : lines;
+  const phoneLine = phoneScope.find((l) => /(telefone|celular|whatsapp|fone)\s*:/i.test(l));
+  const phone = phoneLine?.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/);
+  if (phone) r.client_phone = phone[0].trim();
 
-  const timeLine = lines.find((l) => /hor[áa]rio|hora\b/i.test(l));
+  // Data do evento (não confundir com a data de emissão)
+  const dateLine = lines.map((l) => l.match(/Data(?: do evento| da festa)?\s*:\s*(\d{2}\/\d{2}\/\d{4})/i)?.[1]).find(Boolean);
+  if (dateLine) r.event_date = brDateToIso(dateLine);
+
+  const timeLine = lines.find((l) => /hor[áa]rio\s*:|\bhora\s*:/i.test(l)) ?? lines.find((l) => /hor[áa]rio|hora\b/i.test(l));
   const tm = timeLine?.match(/(\d{1,2})\s*(?:h|:)\s*(\d{2})?/i);
   if (tm) r.event_time = `${tm[1]!.padStart(2, '0')}:${(tm[2] ?? '00').padStart(2, '0')}`;
 
-  const dueLine = lines.find((l) => /vencimento/i.test(l));
-  const dueDate = dueLine?.match(/\d{2}\/\d{2}\/\d{4}/)?.[0];
-  const method = lines.map((l) => l.match(/forma(?: de)? pagamento\s*[:-]\s*(.+)/i)?.[1]).find(Boolean) ?? '';
-  const methodValue = METHOD_MAP.find(([re]) => re.test(method))?.[1] ?? (method ? 'outro' : '');
+  // Orçamento / emissão
+  const orc = lines.map((l) => l.match(/\bORC-\d+\b/i)?.[0]).find(Boolean);
+  const emissao = lines.map((l) => l.match(/Emiss[ãa]o\s*:\s*(\d{2}\/\d{2}\/\d{4})/i)?.[1]).find(Boolean);
+  const obs = findText(lines, /observa[çc][õo]es?/);
+  r.notes = [orc && `Orçamento ${orc}`, emissao && `emissão ${emissao}`, obs].filter(Boolean).join(' · ');
 
-  for (const l of lines) {
-    // Linha de item: "Produto  2 x R$ 400,00  R$ 800,00" (ou sem "R$" / "x")
-    const m = l.match(new RegExp(`^(.*?)\\s+(\\d+(?:[.,]\\d+)?)\\s*(?:x\\s*)?R?\\$?\\s*${MONEY}\\s+R?\\$?\\s*${MONEY}$`, 'i'));
-    if (!m) continue;
-    const name = m[1]!.trim();
-    if (!name || /total|desconto|acr[ée]scimo|entrada|saldo/i.test(name)) continue;
-    const qty = Number(m[2]!.replace(',', '.'));
-    const unitPrice = Number(brMoneyToDecimal(m[3]!));
-    const lineTotal = Number(brMoneyToDecimal(m[4]!));
+  r.discount_amount = findMoney(lines, /desconto/i);
+  r.surcharge_amount = findMoney(lines, /acr[ée]scimo|taxa de servi[çc]o/i);
+  const totalLine = lines.find((l) => /total\s+(?:estimado|do pedido|geral|a pagar)\s*:/i.test(l));
+  r.total = totalLine ? brMoneyDecimal(totalLine.match(/:\s*R?\$?\s*(\d[\d.]*,\d{2})/)?.[1]) : findMoney(lines, /total/i);
+
+  // Itens (vendas e consignação), com nome resolvido pela linha acima
+  let inConsignment = false;
+  let consignmentCount = 0;
+  lines.forEach((line, index) => {
+    if (/ITENS EM CONSIGNA/i.test(line)) { inConsignment = true; return; }
+    if (/ITENS DE VENDA|DADOS PARA NOTA|CONDI[CÇ][ÕO]ES/i.test(line)) { inConsignment = false; return; }
+    const row = parseItemRow(line);
+    if (!row) return;
+    const name = productName(lines, index, row.pre);
+    if (!name) return;
     const liters = name.match(/(\d{1,3}(?:[.,]\d)?)\s*(?:l|lt|litros?)\b/i)?.[1]?.replace(',', '.') ?? '';
-    const isKeg = !!liters || /barril|chopp|keg/i.test(name);
-    r.items.push({ product_name: name, unit: isKeg ? 'barril' : 'unidade', keg_liters: liters, quantity: String(qty), unit_price: String(unitPrice), line_total: String(lineTotal) });
-    if (Math.abs(qty * unitPrice - lineTotal) > 0.005) {
-      r.warnings.push(`Item "${name}": quantidade × valor (R$ ${(qty * unitPrice).toFixed(2).replace('.', ',')}) difere do total da linha (R$ ${m[4]}). Confira.`);
+    const isKeg = (Number(liters) >= 20) || /barril|chopp|keg/i.test(name);
+    const unit = isKeg ? 'barril' : /\blitro\b/i.test(name) ? 'litro' : 'unidade';
+    if (inConsignment) consignmentCount += 1;
+    r.items.push({
+      product_name: name, unit, keg_liters: isKeg ? liters : '', quantity: String(row.qty), unit_price: String(row.unit), line_total: String(row.total)
+    });
+    if (row.unitFixed) {
+      r.warnings.push(`Item "${name}": valor unitário ajustado pelo total lido (R$ ${row.total.toFixed(2).replace('.', ',')} ÷ ${row.qty}). Confira.`);
+    } else if (Math.abs(row.qty * row.unit - row.total) > 0.5) {
+      r.warnings.push(`Item "${name}": quantidade × valor (R$ ${(row.qty * row.unit).toFixed(2).replace('.', ',')}) difere do total lido (R$ ${row.total.toFixed(2).replace('.', ',')}). Confira.`);
     }
+  });
+
+  // Pagamentos: linha "dd/mm/aa Pix R$ x" (pagamento já informado no orçamento) — entra como PREVISTO
+  const methodOf = (text: string) => METHOD_MAP.find(([re]) => re.test(text))?.[1] ?? (text ? 'outro' : '');
+  const formMethod = methodOf(lines.map((l) => l.match(/forma(?: de)? pagamento\s*:\s*(.+)/i)?.[1]).find(Boolean) ?? '');
+  const payLine = lines.map((l) => l.match(/(\d{2}\/\d{2}\/\d{2,4})\s+(Pix|Boleto|Dinheiro|Cart[ãa]o[^R]*?|Transfer[êe]ncia|Cheque)\s+R\$(\d[\d.]*,\d{2})/i)).find(Boolean);
+  const advance = findMoney(lines, /valor antecipado recebido|adiantamento recebido/i);
+  const fromBudget = !!payLine || !!advance;
+  if (payLine) {
+    r.payments.push({ kind: 'entrada', amount: brMoneyDecimal(payLine[3]), due_date: brDateToIso(payLine[1]!), method: methodOf(payLine[2]!) });
+  } else if (advance) {
+    r.payments.push({ kind: 'entrada', amount: advance, due_date: '', method: formMethod });
+  }
+  if (!payLine && !advance) {
+    const entrada = findMoney(lines, /entrada/i);
+    if (entrada) r.payments.push({ kind: 'entrada', amount: entrada, due_date: '', method: formMethod });
   }
 
-  const entrada = findMoney(lines, /entrada/i);
-  const saldo = findMoney(lines, /saldo(?: devedor| a pagar| restante)?/i);
-  if (entrada) r.payments.push({ kind: 'entrada', amount: entrada, due_date: '', method: methodValue });
-  if (saldo) r.payments.push({ kind: 'saldo', amount: saldo, due_date: dueDate ? parseDateBR(dueDate) ?? '' : '', method: methodValue });
+  const saldo = lines.map((l) => l.match(/saldo(?: total| devedor| a pagar| restante)?\s*:?\s*R\$(\d[\d.]*,\d{2})/i)?.[1]).find(Boolean);
+  if (saldo) {
+    const dueLine = lines.map((l) => l.match(/vencimento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i)?.[1]).find(Boolean);
+    r.payments.push({ kind: 'saldo', amount: brMoneyDecimal(saldo), due_date: dueLine ? brDateToIso(dueLine) : '', method: formMethod });
+  }
+  // Conferências
+  const itemsSum = r.items.reduce((s, i) => s + Number(i.line_total), 0);
+  const expected = itemsSum - num2(r.discount_amount) + num2(r.surcharge_amount);
+  const totalNumber = Number(r.total || 0);
+  if (totalNumber && r.items.length && Math.abs(expected - totalNumber) > 0.5) {
+    r.warnings.push(`Soma dos itens com desconto e acréscimo (R$ ${expected.toFixed(2).replace('.', ',')}) difere do total do pedido (R$ ${totalNumber.toFixed(2).replace('.', ',')}). Confira os itens.`);
+  }
+  if (consignmentCount) {
+    r.warnings.push(`Inclui ${consignmentCount} item(ns) em consignação: valor estimado, definitivo conforme o consumo apurado.`);
+  }
+  if (fromBudget) {
+    const paid = r.payments.find((p) => p.kind === 'entrada');
+    if (paid) r.warnings.push(`Pagamento de R$ ${paid.amount.replace('.', ',')} informado no orçamento: entrou como previsto. Confirme na festa quando o valor estiver no extrato.`);
+  }
 
   r.found = (Object.entries({
     'nome do cliente': r.client_name, telefone: r.client_phone, 'nome do evento': r.event_name, data: r.event_date,
-    horário: r.event_time, endereço: r.address, total: r.total, produtos: r.items.length ? 'ok' : '', pagamentos: r.payments.length ? 'ok' : ''
+    horário: r.event_time, endereço: r.address, total: r.total, produtos: r.items.length ? 'ok' : '', pagamentos: r.payments.length ? 'ok' : '',
+    orçamento: orc ?? ''
   }) as [string, string][]).filter(([, v]) => v).map(([k]) => k);
 
   if (!r.items.length) r.warnings.push('Não identifiquei os produtos no PDF: preencha os itens manualmente.');
   if (!r.total) r.warnings.push('Total do pedido não encontrado: confira o valor.');
   return r;
+}
+
+function num2(v: string): number {
+  return Number(v || 0);
+}
+
+function brMoneyDecimal(v: string | undefined): string {
+  return v ? brNumber(v).toFixed(2) : '';
 }
 
 /** Interpreta a partir dos trechos com posição (preferido) ou do texto puro. */

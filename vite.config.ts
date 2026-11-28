@@ -34,6 +34,8 @@ export default defineConfig({
       workbox: {
         // Apenas a casca da aplicação é cacheada. Nenhuma resposta de API (dados financeiros/pessoais) vai para o cache.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Motor de OCR (festas) é carregado sob demanda, não entra no cache da casca.
+        globIgnores: ['**/ocr/**'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/legal\//],
         // Ouvinte de notificações push (public/push-sw.js) incluído no service worker.
