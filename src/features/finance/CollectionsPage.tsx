@@ -1,37 +1,31 @@
-import { useState } from 'react';
-import { Play, ExternalLink, CheckCheck, XCircle, Copy, Settings2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ExternalLink, Copy, Phone, Play } from 'lucide-react';
 import { useList, db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PageHeader, Card, Tabs } from '@/components/ui/Layout';
 import { Button } from '@/components/ui/Button';
-import { Alert, Badge, EmptyState, LoadingBlock, friendlyError } from '@/components/ui/Feedback';
+import { Badge, EmptyState, LoadingBlock, friendlyError } from '@/components/ui/Feedback';
 import { useToast } from '@/components/ui/Toast';
-import { MESSAGE_STATUS, whatsappLink, type MessageStatus } from '@/domain/messages';
-import { formatDateBR, todaySP, formatDateTimeBR } from '@/domain/dates';
-import type { Tone } from '@/domain/collections';
+import { whatsappLink } from '@/domain/messages';
+import { formatDateBR, todaySP } from '@/domain/dates';
+import { formatReais, toCents } from '@/domain/money';
+import { calculateCharges, chargeRulesFromRow } from '@/domain/collections';
+import { cobrancaMessage, cobrancaStage, COBRANCA_STAGE, type CobrancaStage } from '@/domain/cobranca';
+import { useProtestMap } from './ReceivableStatusBadge';
 import { CollectionRulesForm } from './CollectionRulesForm';
 
-const TONE: Record<MessageStatus, Tone> = { gerada: 'info', aberta: 'warning', envio_informado: 'success', entregue_api: 'success', falha: 'danger', cancelada: 'neutral' };
+type Tab = CobrancaStage | 'regras';
+const TABS: [Tab, string][] = [['vencido', 'Vencidos'], ['a_vencer', 'A vencer'], ['cartorio', 'Em cartório'], ['protestado', 'Protestados'], ['regras', 'Regras de cobrança']];
 
-/** Fila diária de mensagens prontas (WhatsApp por link oficial) e regras de cobrança. */
+/** Cobrança: quem cobrar hoje, separado por situação. Abrir o WhatsApp não é envio; o registro é manual. */
 export function CollectionsPage() {
   const { can } = useAuth();
   const toast = useToast();
   const invalidate = useInvalidateAll();
-  const [tab, setTab] = useState<'fila' | 'historico' | 'regras'>('fila');
+  const [tab, setTab] = useState<Tab>('vencido');
   const [running, setRunning] = useState(false);
-  const queue = useList<Row>('message_queue', { select: '*,customer:customers(name,trade_name)', filters: tab === 'fila' ? [{ column: 'status', op: 'in', value: ['gerada', 'aberta'] }] : [{ column: 'status', op: 'not_in', value: ['gerada', 'aberta'] }], order: [{ column: 'scheduled_for', ascending: tab === 'fila' }], range: [0, 299] });
-
-  const setStatus = async (m: Row, status: MessageStatus, extra: Row = {}) => {
-    try {
-      await db().update('message_queue', String(m.id), { status, ...extra });
-      invalidate();
-    } catch (e) {
-      toast(friendlyError(e), 'danger');
-    }
-  };
-  const run = async () => {
+  const runRules = async () => {
     setRunning(true);
     try {
       const r = await db().rpc<{ effects?: number; skipped?: string }>('run_automations', { p_day: todaySP() });
@@ -42,45 +36,83 @@ export function CollectionsPage() {
     }
     setRunning(false);
   };
+  const recv = useList<Row>('receivables_view', { filters: [{ column: 'status', op: 'in', value: ['em_aberto', 'parcialmente_pago'] }], order: [{ column: 'due_date' }], range: [0, 4999] });
+  const protests = useProtestMap();
+  const boletos = useList<Row>('boletos', { select: 'receivable_id,digitable_line,status', filters: [{ column: 'status', op: 'eq', value: 'registrado' }], range: [0, 4999] });
+  const settings = useList<Row>('settings', { range: [0, 499] });
+  const holidays = useList<Row>('holidays', { select: 'day', range: [0, 1999] });
+  const rules = useList<Row>('collection_rules', { range: [0, 499] });
+  const company = useList<Row>('company', {});
+  const today = todaySP();
+  const dueSoon = Number(settings.data?.rows.find((s) => s.key === 'finance.due_soon_days')?.value ?? 7);
+  const holidaySet = useMemo(() => new Set((holidays.data?.rows ?? []).map((h) => String(h.day))), [holidays.data]);
+  const lineByReceivable = useMemo(() => new Map((boletos.data?.rows ?? []).map((b) => [String(b.receivable_id), String(b.digitable_line ?? '')])), [boletos.data]);
+  const empresa = String(company.data?.rows[0]?.trade_name ?? 'JK CHOPP');
 
-  const rows = queue.data?.rows ?? [];
+  const items = useMemo(() => (recv.data?.rows ?? []).map((r) => {
+    const stage = cobrancaStage({ open: true, dueDate: String(r.due_date), today, dueSoonDays: dueSoon, protest: protests.get(String(r.id)) ?? null });
+    if (!stage) return null;
+    const outstanding = toCents(Number(r.outstanding ?? 0));
+    const rule = (r.collection_rule_snapshot as Row | null) ?? rules.data?.rows.find((x) => !x.customer_id) ?? null;
+    const ch = calculateCharges(outstanding, String(r.due_date), today, chargeRulesFromRow(rule), holidaySet);
+    const total = ch.total;
+    const nome = String(r.customer_trade_name ?? r.customer_name ?? '');
+    const phone = String(r.customer_whatsapp ?? r.customer_phone ?? '');
+    const values = { nome, empresa, valor: formatReais(outstanding / 100), valorAtualizado: formatReais(total / 100), vencimento: formatDateBR(String(r.due_date)), diasAtraso: ch.daysLate, linhaDigitavel: lineByReceivable.get(String(r.id)) || null };
+    return { r, stage, phone, total, daysLate: ch.daysLate, text: cobrancaMessage(stage, values), nome };
+  }).filter((x): x is NonNullable<typeof x> => x !== null), [recv.data, protests, today, dueSoon, holidaySet, lineByReceivable, empresa, rules.data]);
+
+  const byStage = (s: CobrancaStage) => items.filter((x) => x.stage === s).sort((a, b) => String(a.r.due_date).localeCompare(String(b.r.due_date)));
+  const counts: Record<string, number> = { vencido: byStage('vencido').length, a_vencer: byStage('a_vencer').length, cartorio: byStage('cartorio').length, protestado: byStage('protestado').length };
+  const list = tab === 'regras' ? [] : byStage(tab);
+
+  const registerCharge = async (x: (typeof items)[number]) => {
+    try {
+      await db().insert('customer_interactions', { customer_id: x.r.customer_id, kind: 'cobranca', summary: `Cobrança (${COBRANCA_STAGE[x.stage].label}) — ${String(x.r.description)} — saldo ${formatReais(Number(x.r.outstanding))}` });
+      invalidate();
+      toast('Cobrança registrada no histórico do cliente.');
+    } catch (e) {
+      toast(friendlyError(e), 'danger');
+    }
+  };
+
   return (
     <div className="animate-fade-in">
-      <PageHeader title="Cobranças" subtitle="Mensagens geradas automaticamente pelas regras (1 dia antes, no dia, após o vencimento, antes do protesto). O envio é confirmado por você."
-        actions={can('automacoes', 'edit') && <Button icon={<Play className="size-4" />} loading={running} onClick={run}>Gerar fila agora</Button>} />
-      <Tabs tabs={[{ key: 'fila', label: 'Fila do dia', count: tab === 'fila' ? rows.length : undefined }, { key: 'historico', label: 'Histórico' }, { key: 'regras', label: 'Regras de cobrança' }]} value={tab} onChange={setTab} />
-      {tab === 'regras' ? <CollectionRulesForm /> : queue.isLoading ? <Card opaque><LoadingBlock /></Card> : rows.length === 0 ? (
-        <Card><EmptyState title={tab === 'fila' ? 'Nenhuma mensagem pendente' : 'Sem histórico'} description="As automações rodam diariamente no servidor (pg_cron). Você também pode gerar a fila manualmente." /></Card>
+      <PageHeader title="Cobranças" subtitle="Quem cobrar hoje: vencidos, a vencer, em cartório e protestados. Valores com multa e juros pela regra do título."
+        actions={can('automacoes', 'edit') && <Button icon={<Play className="size-4" />} loading={running} onClick={runRules}>Gerar fila agora</Button>} />
+      <Tabs tabs={TABS.map(([k, label]) => ({ key: k, label, count: k === 'regras' ? undefined : counts[k] }))} value={tab} onChange={(k) => setTab(k as Tab)} />
+      {tab === 'regras' ? <CollectionRulesForm /> : recv.isLoading ? <Card opaque><LoadingBlock /></Card> : list.length === 0 ? (
+        <Card><EmptyState title={`Nenhum título em "${COBRANCA_STAGE[tab as CobrancaStage].label}"`} description={COBRANCA_STAGE[tab as CobrancaStage].help} /></Card>
       ) : (
         <div className="space-y-3">
-          {tab === 'fila' && <Alert tone="info">“Abrir WhatsApp” não equivale a envio. Depois de enviar, clique em “Informar envio”. Mensagens de títulos quitados são canceladas automaticamente.</Alert>}
-          {rows.map((m) => {
-            const c = m.customer as Row | null;
-            const link = m.phone ? whatsappLink(String(m.phone), String(m.body)) : null;
+          <p className="text-sm text-cocoa-700">{COBRANCA_STAGE[tab as CobrancaStage].help}</p>
+          {list.map((x) => {
+            const link = x.phone ? whatsappLink(x.phone, x.text) : null;
             return (
-              <Card key={String(m.id)} opaque>
+              <Card key={String(x.r.id)} opaque>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={TONE[m.status as MessageStatus]}>{MESSAGE_STATUS[m.status as MessageStatus]}</Badge>
-                  <span className="font-semibold">{String(c?.trade_name ?? c?.name ?? 'Sem cliente')}</span>
-                  <span className="text-xs text-cocoa-700">{String(m.template_key ?? 'livre')} · {formatDateBR(m.scheduled_for as string)}</span>
-                  {m.reported_sent_at ? <span className="ml-auto text-xs text-cocoa-700">Informado em {formatDateTimeBR(m.reported_sent_at as string)}</span> : null}
-                  {m.cancel_reason ? <span className="ml-auto text-xs text-cocoa-700">{String(m.cancel_reason)}</span> : null}
+                  <Badge tone={COBRANCA_STAGE[x.stage].tone}>{COBRANCA_STAGE[x.stage].label}</Badge>
+                  <span className="font-semibold">{x.nome || 'Sem nome'}</span>
+                  <span className="text-xs text-cocoa-700">{String(x.r.description)}</span>
+                  <span className="ml-auto text-sm font-semibold num">{formatReais(x.total / 100)}</span>
                 </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm">{String(m.body)}</p>
-                {tab === 'fila' && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button size="sm" variant="secondary" icon={<Copy className="size-4" />} onClick={() => navigator.clipboard.writeText(String(m.body)).then(() => toast('Mensagem copiada.'))}>Copiar</Button>
-                    <Button size="sm" variant="secondary" icon={<ExternalLink className="size-4" />} disabled={!link} title={!link ? 'Telefone inválido' : undefined} onClick={() => { window.open(link!, '_blank', 'noopener'); setStatus(m, 'aberta', { opened_at: new Date().toISOString() }); }}>Abrir WhatsApp</Button>
-                    <Button size="sm" icon={<CheckCheck className="size-4" />} disabled={m.status !== 'aberta'} onClick={() => setStatus(m, 'envio_informado', { reported_sent_at: new Date().toISOString() })}>Informar envio</Button>
-                    <Button size="sm" variant="ghost" icon={<XCircle className="size-4" />} onClick={() => setStatus(m, 'cancelada', { cancel_reason: 'Cancelada pelo usuário' })}>Cancelar</Button>
-                  </div>
-                )}
+                <p className="mt-1 text-xs text-cocoa-700">
+                  Vencimento {formatDateBR(String(x.r.due_date))}
+                  {x.daysLate > 0 ? ` · ${x.daysLate} dia(s) de atraso (multa e juros inclusos)` : ' · ainda não venceu'}
+                  {x.phone ? '' : ' · sem WhatsApp cadastrado'}
+                </p>
+                <p className="mt-2 whitespace-pre-wrap rounded-xl bg-cream-100 p-2 text-sm">{x.text}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" variant="secondary" icon={<Copy className="size-4" />} onClick={() => navigator.clipboard.writeText(x.text).then(() => toast('Mensagem copiada.'))}>Copiar</Button>
+                  <Button size="sm" variant="secondary" icon={<ExternalLink className="size-4" />} disabled={!link} title={!link ? 'Cadastre o WhatsApp do cliente' : undefined} onClick={() => window.open(link!, '_blank', 'noopener')}>Abrir WhatsApp</Button>
+                  {x.phone && <Button size="sm" variant="ghost" icon={<Phone className="size-4" />} onClick={() => window.open(`tel:${x.phone.replace(/\D/g, '')}`)}>Ligar</Button>}
+                  {can('cobranca', 'create') && <Button size="sm" variant="soft" onClick={() => registerCharge(x)}>Registrar cobrança feita</Button>}
+                </div>
               </Card>
             );
           })}
         </div>
       )}
-      <p className="mt-4 flex items-center gap-1 text-xs text-cocoa-700"><Settings2 className="size-3.5" /> WhatsApp Business Platform (entrega confirmada por API) é opcional e depende de contratação — veja Integrações.</p>
     </div>
   );
 }
