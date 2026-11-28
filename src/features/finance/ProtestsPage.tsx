@@ -23,7 +23,18 @@ export function ProtestsPage() {
   const byId = new Map((recv.data?.rows ?? []).map((r) => [String(r.id), r]));
   const [editing, setEditing] = useState<Row | null>(null);
   const [creating, setCreating] = useState(false);
-  const rows = (q.data?.rows ?? []).map((p) => ({ p, r: byId.get(String(p.receivable_id)) }));
+  // Só aparece o que exige ação no cartório. Fica fora: sem protesto (nao_encaminhado), protesto cancelado,
+  // retirado/desistido e títulos pagos que já saíram do cartório.
+  const ACTIVE = ['programado', 'encaminhado', 'em_cartorio', 'protestado', 'aguardando_anuencia', 'aguardando_cancelamento', 'cancelamento_solicitado'];
+  const rows = (q.data?.rows ?? []).map((p) => ({ p, r: byId.get(String(p.receivable_id)) })).filter(({ p, r }) => {
+    if (!ACTIVE.includes(String(p.status))) return false;
+    // Título pago só aparece enquanto ainda está no cartório (pendência a resolver); nunca "programado" para pago.
+    if (r?.status === 'pago') return String(p.status) !== 'programado';
+    if (r?.status === 'cancelado' || r?.status === 'renegociado') return false;
+    // Programado só faz sentido para título VENCIDO; antes do vencimento não há encaminhamento.
+    if (String(p.status) === 'programado' && r?.financial_status !== 'vencido') return false;
+    return true;
+  });
   const pendingPaid = rows.filter(({ p, r }) => r?.status === 'pago' && ['encaminhado', 'em_cartorio', 'protestado', 'aguardando_anuencia', 'aguardando_cancelamento', 'cancelamento_solicitado'].includes(String(p.status)));
 
   return (
@@ -58,7 +69,8 @@ export function ProtestsPage() {
 }
 
 function NewProtestDialog({ onClose }: { onClose: () => void }) {
-  const recv = useList<Row>('receivables_view', { filters: [{ column: 'financial_status', op: 'in', value: ['vencido', 'parcialmente_pago'] }], range: [0, 999] });
+  // Só boleto VENCIDO e NÃO pago pode ser encaminhado a protesto.
+  const recv = useList<Row>('receivables_view', { filters: [{ column: 'financial_status', op: 'eq', value: 'vencido' }], range: [0, 999] });
   const [id, setId] = useState('');
   const [date, setDate] = useState('');
   const toast = useToast();

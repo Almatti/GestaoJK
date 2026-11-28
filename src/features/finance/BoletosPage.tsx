@@ -265,8 +265,9 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
           {p && situation.key === 'pago_em_protesto' && notaryReleasePath(p.status as ProtestStatus).length > 0 && can('cobranca', 'edit') && <Button icon={<CheckCircle2 className="size-4" />} onClick={releaseNotary}>Cliente deu baixa no cartório</Button>}
           {p ? <Button variant="secondary" icon={<Landmark className="size-4" />} onClick={() => setProtestOpen(true)}>{situation.key === 'pago_em_protesto' || situation.key === 'protesto' ? 'Cartório / carta de anuência' : `Protesto: ${PROTEST_STATUS[p.status as ProtestStatus]}`}</Button>
             : <>
-              {active && open && can('cobranca', 'create') && <Button variant="secondary" icon={<CalendarClock className="size-4" />} onClick={scheduleProtest}>Programar protesto</Button>}
-              {b.status !== 'cancelado' && can('cobranca', 'create') && <Button variant="secondary" icon={<Landmark className="size-4" />} onClick={() => setInNotary(true)}>Já está no cartório</Button>}
+              {/* Protesto só para boleto VENCIDO e não pago. */}
+              {situation.key === 'vencido' && active && can('cobranca', 'create') && <Button variant="secondary" icon={<CalendarClock className="size-4" />} onClick={scheduleProtest}>Programar protesto</Button>}
+              {situation.key === 'vencido' && can('cobranca', 'create') && <Button variant="secondary" icon={<Landmark className="size-4" />} onClick={() => setInNotary(true)}>Já está no cartório</Button>}
             </>}
           {active && (can('cobranca', 'cancel') || can('financeiro', 'cancel')) && <>
             <Button variant="ghost" icon={<Ban className="size-4" />} onClick={() => setStatusAction('cancelado')}>Cancelar boleto</Button>

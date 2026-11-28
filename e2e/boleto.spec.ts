@@ -78,25 +78,11 @@ test('boleto: lê a linha digitável e importa o PDF, preenchendo valor, vencime
   await page.getByRole('button', { name: /^Pago \(/ }).click();
   await expect(page.getByRole('row', { name: /000068/ }).getByText(/Pago/)).toBeVisible();
 
-  // Pago via Pix, mas o título já estava protestado no cartório
+  // Protesto só para boleto VENCIDO e não pago: boleto que ainda não venceu não oferece "Já está no cartório"
   await page.getByRole('row', { name: /000068/ }).getByRole('button', { name: 'Gerenciar' }).click();
-  await page.getByRole('button', { name: 'Já está no cartório' }).click();
-  await page.getByLabel('Etapa atual no cartório').selectOption('protestado');
-  await page.getByRole('button', { name: 'Registrar', exact: true }).click();
-  await expect(page.getByText('Pago/ainda em protesto').first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Cliente deu baixa no cartório' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Já está no cartório' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Programar protesto' })).toHaveCount(0);
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /^Pago\/ainda em protesto/ }).click();
-  await expect(page.getByRole('row', { name: /000068/ })).toBeVisible();
-
-  // Cliente deu baixa no cartório → volta a "Pago"
-  await page.getByRole('row', { name: /000068/ }).getByRole('button', { name: 'Gerenciar' }).click();
-  page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: 'Cliente deu baixa no cartório' }).click();
-  await expect(page.getByText(/agora aparece como "Pago"/)).toBeVisible();
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /^Pago \(/ }).click();
-  await expect(page.getByRole('row', { name: /000068/ })).toBeVisible();
 
   // Corrigir situação lançada por engano: forma de recebimento Pix → boleto
   await page.getByRole('row', { name: /000068/ }).getByRole('button', { name: 'Gerenciar' }).click();
