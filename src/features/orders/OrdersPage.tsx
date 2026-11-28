@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { Plus } from 'lucide-react';
+import { FileUp, Plus } from 'lucide-react';
 import { ResourcePage } from '@/features/resource/ResourcePage';
 import type { ResourceDef } from '@/features/resource/types';
 import { opts } from '@/features/resource/definitions';
@@ -35,5 +35,5 @@ const def: ResourceDef = {
 export function OrdersPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
-  return <ResourcePage def={{ ...def, resource: 'pedidos' }} headerExtra={can('pedidos', 'create') ? <Button icon={<Plus className="size-4" />} onClick={() => navigate('/pedidos/novo')}>Novo pedido</Button> : undefined} />;
+  return <ResourcePage def={{ ...def, resource: 'pedidos' }} headerExtra={can('pedidos', 'create') ? <div className="flex flex-wrap gap-2"><Button variant="secondary" icon={<FileUp className="size-4" />} onClick={() => navigate('/pedidos/importar')}>Importar PDF</Button><Button icon={<Plus className="size-4" />} onClick={() => navigate('/pedidos/novo')}>Novo pedido</Button></div> : undefined} />;
 }

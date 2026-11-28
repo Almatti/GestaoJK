@@ -31,6 +31,7 @@ const Conditions = p(() => import('@/features/customers/CommercialConditionsPage
 const Health = p(() => import('@/features/customers/HealthPage'), 'HealthPage');
 const Orders = p(() => import('@/features/orders/OrdersPage'), 'OrdersPage');
 const OrderEditor = p(() => import('@/features/orders/OrderEditorPage'), 'OrderEditorPage');
+const OrderImport = p(() => import('@/features/orders/OrderImportPage'), 'OrderImportPage');
 const Products = p(() => import('@/features/products/ProductsPage'), 'ProductsPage');
 const Services = p(() => import('@/features/products/ServicesPage'), 'ServicesPage');
 const Pricing = p(() => import('@/features/products/PricingSimulatorPage'), 'PricingSimulatorPage');
@@ -110,6 +111,7 @@ const router = createRouter([
       { path: '/inteligencia-comercial', element: g('clientes', <Health />) },
       { path: '/pedidos', element: g('pedidos', <Orders />) },
       { path: '/pedidos/novo', element: g('pedidos', <OrderEditor />) },
+      { path: '/pedidos/importar', element: g('pedidos', <OrderImport />) },
       { path: '/pedidos/:id', element: g('pedidos', <OrderEditor />) },
       { path: '/festas', element: g('festas', <Festas />) },
       { path: '/festas/novo', element: g('festas', <FestaNovo />) },

@@ -2,6 +2,14 @@
 
 Formato baseado em Keep a Changelog; versões semânticas.
 
+## [0.4.1] — 28/11/2026
+### Adicionado
+- Pedidos: importação de PDF do pedido (ordem de serviço JK CHOPP). Lê número, data, cliente (CNPJ, contato, endereço),
+  entrega, produtos com litragem, forma de pagamento e totais. Vincula a cliente cadastrado (pelo CNPJ) ou cria um novo,
+  e vincula a boleto já gerado (o título do boleto passa a ser o título do pedido; a confirmação não gera outro).
+  Pedido entra como orçamento, com opção de confirmar na hora. O PDF fica anexado ao pedido.
+- Migration 20261128004000_order_import (coluna `orders.external_ref`, função `import_order_pdf`) e testes de banco (31_order_import.sql).
+
 ## [0.4.0] — 28/11/2026
 ### Adicionado
 - Módulo Festas: cadastro independente (sem vínculo com clientes), itens com litragem, descontos/acréscimos gerais e por item,
