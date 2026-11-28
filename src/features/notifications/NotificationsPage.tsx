@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { Bell, BellRing, Check, Archive, Clock, CheckCheck, Play } from 'lucide-react';
+import { Bell, Check, Archive, Clock, CheckCheck, Play } from 'lucide-react';
 import { useList, db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -10,6 +10,7 @@ import { Badge, EmptyState, LoadingBlock, friendlyError, Alert } from '@/compone
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTimeBR, todaySP } from '@/domain/dates';
 import type { Tone } from '@/domain/collections';
+import { PushCard } from './PushCard';
 
 const CATS = { financeiro: 'Financeiras', comercial: 'Comerciais', operacional: 'Operacionais', logistica: 'Logísticas', tecnico: 'Técnicas', estrategico: 'Estratégicas', administrativo: 'Administrativas', marketing: 'Marketing', integracoes: 'Integrações', seguranca: 'Segurança' };
 const PRIO: Record<string, Tone> = { baixa: 'neutral', normal: 'info', alta: 'warning', critica: 'danger' };
@@ -22,7 +23,6 @@ export function NotificationsPage() {
   const [cat, setCat] = useState('');
   const q = useList<Row>('notifications', { filters: [{ column: 'status', op: tab === 'nao_lida' ? 'in' : 'eq', value: tab === 'nao_lida' ? ['nao_lida', 'adiada'] : tab }, ...(cat ? [{ column: 'category', op: 'eq' as const, value: cat }] : [])], order: [{ column: 'created_at', ascending: false }], range: [0, 299] });
   const rows = (q.data?.rows ?? []).filter((n) => n.status !== 'adiada' || !n.snoozed_until || String(n.snoozed_until) <= new Date().toISOString());
-  const pushSupported = 'Notification' in window;
 
   const set = async (n: Row, status: string, extra: Row = {}) => {
     try {
@@ -35,10 +35,6 @@ export function NotificationsPage() {
   const markAll = async () => {
     for (const n of rows.filter((r) => r.status === 'nao_lida')) await db().update('notifications', String(n.id), { status: 'lida' }).catch(() => undefined);
     invalidate();
-  };
-  const enablePush = async () => {
-    const p = await Notification.requestPermission();
-    toast(p === 'granted' ? 'Notificações do navegador autorizadas.' : 'Permissão não concedida.', p === 'granted' ? 'success' : 'warning');
   };
   const runNow = async () => {
     try {
@@ -56,8 +52,8 @@ export function NotificationsPage() {
     <div className="animate-fade-in">
       <PageHeader title="Central de notificações" subtitle="Alertas gerados pelas automações do servidor, sem duplicidade (chave única por evento e dia)."
         actions={<>
-          {pushSupported && Notification.permission !== 'granted' && <Button variant="secondary" icon={<BellRing className="size-4" />} onClick={enablePush}>Ativar notificações push</Button>}
           {can('automacoes', 'edit') && <Button variant="secondary" icon={<Play className="size-4" />} onClick={runNow}>Verificar agora</Button>}
+      <PushCard />
           {tab === 'nao_lida' && rows.length > 0 && <Button icon={<CheckCheck className="size-4" />} onClick={markAll}>Marcar todas como lidas</Button>}
         </>} />
       {tab === 'nao_lida' && summary.length > 0 && <div className="mb-4"><Alert tone="info" title="Resumo de prioridades">{summary.map(([l, c]) => `${l}: ${c}`).join(' · ')}</Alert></div>}

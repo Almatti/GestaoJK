@@ -36,6 +36,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/legal\//],
+        // Ouvinte de notificações push (public/push-sw.js) incluído no service worker.
+        importScripts: ['push-sw.js'],
         runtimeCaching: []
       }
     })
