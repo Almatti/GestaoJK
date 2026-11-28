@@ -4,7 +4,7 @@ export interface SettingDef {
   key: string;
   label: string;
   type: SettingType;
-  group: 'Comercial' | 'Financeiro' | 'Patrimônio' | 'Notificações' | 'Parceiros' | 'IA' | 'Marketing' | 'Consulta CNPJ';
+  group: 'Comercial' | 'Financeiro' | 'Patrimônio' | 'Notificações' | 'Parceiros' | 'IA' | 'Marketing' | 'Consulta CNPJ' | 'Festas';
   help?: string;
   options?: { value: string; label: string }[];
   min?: number;
@@ -28,6 +28,8 @@ export const SETTING_DEFS: SettingDef[] = [
   { key: 'notifications.quiet_hours', label: 'Horário silencioso', type: 'json', group: 'Notificações', default: { start: '22:00', end: '07:00' } },
   { key: 'partners.eligibility', label: 'Elegibilidade padrão de crédito', type: 'select', group: 'Parceiros', default: 'entregue', options: [{ value: 'confirmado', label: 'Pedido confirmado' }, { value: 'entregue', label: 'Pedido entregue' }, { value: 'recebido', label: 'Pagamento recebido' }] },
   { key: 'ai.enabled', label: 'Assistente com provedor externo', type: 'boolean', group: 'IA', default: false, help: 'Desligado: o assistente usa apenas consultas internas determinísticas.' },
+  { key: 'festas.alert_days', label: 'Lembretes de festas (dias antes do evento)', type: 'json', group: 'Festas', default: [3, 2, 0], help: 'Lista de dias. Ex.: [3,2,0] avisa 3 dias antes, 2 dias antes e no dia (0). Valores fora de 0 a 60 são ignorados.' },
+  { key: 'festas.unchecked_window_days', label: 'Aviso de produtos não conferidos (dias antes da festa)', type: 'number', group: 'Festas', min: 1, max: 60, default: 7 },
   { key: 'marketing.auto_hashtags', label: 'Inserir hashtags automaticamente', type: 'boolean', group: 'Marketing', default: false }
 ];
 

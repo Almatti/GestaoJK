@@ -29,6 +29,11 @@ sem trilha de auditoria e algumas funções avançadas exibem aviso. Ao configur
    `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_STATE_SECRET`.
 4. Revisar empresa, Pix e regras de cobrança; convidar a equipe com papéis.
 
+## Módulo Festas (28/11/2026)
+- Migration `20261128003000_festas` aplicada em produção (tabelas `festa_events/items/payments`, views, funções transacionais, alertas via pg_cron `jk-festas-alerts` 08:15 BRT).
+- Telas: `/festas` (lista, calendário, indicadores), `/festas/novo`, `/festas/importar`, `/festas/:id`, `/festas/:id/editar`, `/festas/planejamento`.
+- Limitações: leitura do PDF é heurística (campos não reconhecidos ficam em branco para preenchimento); documentos de impressão usam o "Salvar como PDF" do navegador; teste ponta a ponta com servidor real ainda não executado (E2E roda em demonstração, onde o módulo exige servidor).
+
 ## Resumo
 Fases 1 a 8 implementadas em primeira versão funcional: domínio testado, banco com RLS e funções transacionais, ~45 telas, PWA, assistente determinístico, motor de automações, Edge Functions, backups, CI e documentação. Banco de produção configurado (ver seção acima); faltam o primeiro usuário, a importação dos dados locais e as credenciais das integrações.
 

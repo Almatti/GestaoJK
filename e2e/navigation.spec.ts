@@ -6,7 +6,7 @@ const ROUTES: [string, RegExp][] = [
   ['/financeiro', /Visão financeira/], ['/financeiro/receber', /Contas a receber/], ['/financeiro/pagar', /Contas a pagar/], ['/financeiro/boletos', /Boletos/],
   ['/financeiro/pix', /Pix/], ['/financeiro/cobrancas', /Cobranças/], ['/financeiro/protestos', /Protestos/], ['/financeiro/fluxo-de-caixa', /Fluxo de caixa/],
   ['/relatorios', /Relatórios/], ['/estoque', /Estoque/], ['/equipamentos', /Equipamentos/], ['/ordens-de-servico', /Ordens de serviço/], ['/logistica', /Logística/],
-  ['/compras', /Compras/], ['/parceiros', /Parceiros/], ['/agenda', /Agenda/], ['/tarefas', /Tarefas/], ['/reunioes', /Reuniões/], ['/notas', /notas/],
+  ['/compras', /Compras/], ['/festas', /Festas/], ['/festas/novo', /Nova festa/], ['/festas/importar', /Importar pedido em PDF/], ['/festas/planejamento', /Compras e checklist/], ['/parceiros', /Parceiros/], ['/agenda', /Agenda/], ['/tarefas', /Tarefas/], ['/reunioes', /Reuniões/], ['/notas', /notas/],
   ['/marketing', /Marketing/], ['/metas', /Metas/], ['/planejamento', /Planejamento/], ['/assistente', /Assistente/], ['/notificacoes', /notificações/],
   ['/admin/usuarios', /Usuários/], ['/admin/automacoes', /automações/], ['/admin/integracoes', /Integrações/], ['/admin/configuracoes', /Configurações/], ['/admin/auditoria', /Auditoria/], ['/admin/backups', /Backups/]
 ];
@@ -31,4 +31,13 @@ test('busca global encontra cliente', async ({ page }) => {
 test('ambiente de demonstração é claramente sinalizado', async ({ page }) => {
   await login(page);
   await expect(page.getByText('AMBIENTE DE DEMONSTRAÇÃO')).toBeVisible();
+});
+
+test('festas no modo demonstração avisa que exige servidor e não simula dados', async ({ page }) => {
+  await login(page);
+  await page.goto('/festas');
+  await expect(page.getByText('Módulo Festas indisponível neste modo')).toBeVisible();
+  await page.goto('/festas/novo');
+  await expect(page.getByText('Módulo Festas indisponível neste modo')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Salvar festa' })).toBeDisabled();
 });

@@ -33,6 +33,7 @@ export const RESOURCES = {
   organizacao: 'Agenda, tarefas, reuniões e notas',
   marketing: 'Marketing',
   estrategia: 'Metas e planejamento',
+  festas: 'Festas (eventos e compras)',
   ia: 'Assistente inteligente',
   automacoes: 'Automações e mensagens',
   admin: 'Usuários, configurações, integrações e auditoria'
@@ -47,25 +48,25 @@ export const PERMISSION_MATRIX: Record<Role, Partial<Record<Resource, Action[]>>
   admin: Object.fromEntries(Object.keys(RESOURCES).map((r) => [r, ALL])) as Record<Resource, Action[]>,
   administrativo: {
     dashboard: RO, clientes: [...RW, 'export'], produtos: RW, pedidos: [...RW, 'cancel', 'export'], financeiro: [...RW, 'export'],
-    cobranca: [...RW, 'export'], estoque: RW, equipamentos: RW, logistica: RW, tecnico: RW, parceiros: RW, organizacao: RW,
+    cobranca: [...RW, 'export'], estoque: RW, equipamentos: RW, logistica: RW, tecnico: RW, parceiros: RW, organizacao: RW, festas: [...RW, 'cancel', 'export'],
     marketing: RO, estrategia: RW, ia: RO, automacoes: RW
   },
   financeiro: {
     dashboard: RO, clientes: RO, produtos: RO, pedidos: RO, financeiro: ALL, cobranca: ALL, parceiros: [...RW, 'approve'],
-    organizacao: RW, estrategia: RO, ia: RO, automacoes: RW, estoque: RO
+    organizacao: RW, estrategia: RO, ia: RO, automacoes: RW, estoque: RO, festas: ALL
   },
   comercial: {
     dashboard: RO, clientes: [...RW, 'export'], produtos: RO, pedidos: [...RW, 'cancel'], cobranca: RO, equipamentos: RO,
-    logistica: RO, parceiros: RO, organizacao: RW, marketing: RO, estrategia: RO, ia: RO
+    logistica: RO, parceiros: RO, organizacao: RW, marketing: RO, estrategia: RO, ia: RO, festas: RW
   },
   logistica: {
-    dashboard: RO, clientes: RO, pedidos: ['view', 'edit'], estoque: RW, equipamentos: RW, logistica: ALL, tecnico: RO, organizacao: RW
+    dashboard: RO, clientes: RO, pedidos: ['view', 'edit'], estoque: RW, equipamentos: RW, logistica: ALL, tecnico: RO, organizacao: RW, festas: ['view', 'edit']
   },
   tecnico: {
     clientes: RO, equipamentos: ['view', 'edit'], tecnico: RW, logistica: RO, estoque: RO, organizacao: RW
   },
   marketing: { dashboard: RO, clientes: RO, marketing: ALL, estrategia: RW, organizacao: RW, ia: RO },
-  operacional: { clientes: RO, pedidos: RO, estoque: ['view', 'create'], equipamentos: RO, logistica: ['view', 'edit'], organizacao: RW },
+  operacional: { clientes: RO, pedidos: RO, estoque: ['view', 'create'], equipamentos: RO, logistica: ['view', 'edit'], organizacao: RW, festas: ['view', 'edit'] },
   leitura: Object.fromEntries(Object.keys(RESOURCES).filter((r) => r !== 'admin').map((r) => [r, RO])) as Partial<Record<Resource, Action[]>>
 };
 

@@ -38,6 +38,12 @@ const FinanceOverview = p(() => import('@/features/finance/FinanceOverviewPage')
 const Receivables = p(() => import('@/features/finance/ReceivablesPage'), 'ReceivablesPage');
 const Payables = p(() => import('@/features/finance/PayablesPage'), 'PayablesPage');
 const Boletos = p(() => import('@/features/finance/BoletosPage'), 'BoletosPage');
+const Festas = p(() => import('@/features/festas/FestasPage'), 'FestasPage');
+const FestaDetail = p(() => import('@/features/festas/FestaDetailPage'), 'FestaDetailPage');
+const FestaNovo = p(() => import('@/features/festas/FestaForm'), 'FestaNovoPage');
+const FestaEditar = p(() => import('@/features/festas/FestaForm'), 'FestaEditarPage');
+const FestaImportar = p(() => import('@/features/festas/FestaForm'), 'FestaImportarPage');
+const FestasPlanning = p(() => import('@/features/festas/FestasPlanningPage'), 'FestasPlanningPage');
 const Pix = p(() => import('@/features/finance/PixPage'), 'PixPage');
 const Collections = p(() => import('@/features/finance/CollectionsPage'), 'CollectionsPage');
 const Protests = p(() => import('@/features/finance/ProtestsPage'), 'ProtestsPage');
@@ -105,6 +111,12 @@ const router = createRouter([
       { path: '/pedidos', element: g('pedidos', <Orders />) },
       { path: '/pedidos/novo', element: g('pedidos', <OrderEditor />) },
       { path: '/pedidos/:id', element: g('pedidos', <OrderEditor />) },
+      { path: '/festas', element: g('festas', <Festas />) },
+      { path: '/festas/novo', element: g('festas', <FestaNovo />) },
+      { path: '/festas/importar', element: g('festas', <FestaImportar />) },
+      { path: '/festas/planejamento', element: g('festas', <FestasPlanning />) },
+      { path: '/festas/:id', element: g('festas', <FestaDetail />) },
+      { path: '/festas/:id/editar', element: g('festas', <FestaEditar />) },
       { path: '/produtos', element: g('produtos', <Products />) },
       { path: '/servicos', element: g('produtos', <Services />) },
       { path: '/precificacao', element: g('produtos', <Pricing />) },

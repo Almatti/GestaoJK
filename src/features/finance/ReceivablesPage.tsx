@@ -87,7 +87,7 @@ export function ReceivablesPage() {
             <tbody>
               {rows.map((r) => (
                 <tr key={String(r.id)} className="border-t border-tangerine-100 hover:bg-cream-100/60">
-                  <td className="px-4 py-3"><Link className="font-semibold hover:underline" to={`/clientes/${r.customer_id}`}>{String(r.customer_trade_name ?? r.customer_name)}</Link></td>
+                  <td className="px-4 py-3">{r.customer_id ? <Link className="font-semibold hover:underline" to={`/clientes/${r.customer_id}`}>{String(r.customer_trade_name ?? r.customer_name)}</Link> : <span className="font-semibold">{String(r.customer_name ?? '—')}</span>}</td>
                   <td className="px-4 py-3">{String(r.description)}{r.order_id ? <Link className="ml-1 text-xs text-tangerine-900 underline" to={`/pedidos/${r.order_id}`}>pedido</Link> : null}</td>
                   <td className="px-4 py-3">{formatDateBR(r.due_date as string)}{Number(r.days_overdue) > 0 && !['pago', 'cancelado', 'renegociado'].includes(String(r.status)) ? <span className="block text-xs text-danger-700">{formatNumber(Number(r.days_overdue))} dia(s) de atraso</span> : null}</td>
                   <td className="num px-4 py-3 text-right">{formatReais(r.amount as number)}</td>
@@ -95,13 +95,15 @@ export function ReceivablesPage() {
                   <td className="px-4 py-3"><ReceivableStatusBadge receivableId={String(r.id)} financialStatus={String(r.financial_status)} paymentMethod={r.payment_method as string} /></td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
-                      {['em_aberto', 'parcialmente_pago'].includes(String(r.status)) && canReceive && <Button size="sm" icon={<Banknote className="size-4" />} onClick={() => setReceipt(r)}>Receber</Button>}
+                      {r.origin === 'festas' ? (
+                        <Link to={`/festas/${String(r.festa_event_id)}`} className="inline-flex items-center rounded-control px-3 py-1.5 text-xs font-semibold text-tangerine-900 hover:bg-cream-100">Ver festa</Link>
+                      ) : ['em_aberto', 'parcialmente_pago'].includes(String(r.status)) && canReceive && <Button size="sm" icon={<Banknote className="size-4" />} onClick={() => setReceipt(r)}>Receber</Button>}
                       {['em_aberto', 'parcialmente_pago'].includes(String(r.status)) && (r.customer_whatsapp || r.customer_phone) ? (
                         <WhatsAppButton small label="" phone={String(r.customer_whatsapp ?? r.customer_phone)} templateKey={String(r.financial_status) === 'vencido' ? 'boleto_vencido' : 'lembrete_vencimento'}
                           values={{ NOME_CLIENTE: String(r.customer_trade_name ?? r.customer_name), VALOR_ORIGINAL: formatReais(r.outstanding as number), DATA_VENCIMENTO: formatDateBR(r.due_date as string), DIAS_ATRASO: String(r.days_overdue) }}
                           customerId={String(r.customer_id)} refType="receivable" refId={String(r.id)} />
                       ) : null}
-                      {['em_aberto', 'parcialmente_pago'].includes(String(r.status)) && can('financeiro', 'approve') && <Button size="sm" variant="ghost" icon={<Repeat className="size-4" />} title="Renegociar" aria-label="Renegociar" onClick={() => setReneg(r)} />}
+                      {r.origin !== 'festas' && ['em_aberto', 'parcialmente_pago'].includes(String(r.status)) && can('financeiro', 'approve') && <Button size="sm" variant="ghost" icon={<Repeat className="size-4" />} title="Renegociar" aria-label="Renegociar" onClick={() => setReneg(r)} />}
                     </div>
                   </td>
                 </tr>

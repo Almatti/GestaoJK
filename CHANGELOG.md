@@ -2,6 +2,30 @@
 
 Formato baseado em Keep a Changelog; versões semânticas.
 
+## [0.4.0] — 28/11/2026
+### Adicionado
+- Módulo Festas: cadastro independente (sem vínculo com clientes), itens com litragem, descontos/acréscimos gerais e por item,
+  pagamentos previstos, confirmação de recebimento (exige conferência), correção por estorno sem duplicar, cancelamento
+  com regra própria e histórico preservado. Código FST-00001 sequencial.
+- Festas: importação de PDF do pedido com prévia para conferência (campos não encontrados ficam em branco), bloqueio de
+  PDF duplicado (hash SHA-256) e PDF original guardado como anexo.
+- Festas × financeiro: cada festa gera um título a receber (origem Festas, categoria Festas); pagamentos confirmados entram
+  em Contas a receber e no caixa; situação pendente / parcialmente pago / pago / vencido / cancelado derivada.
+- Festas: calendário mensal e listagem cronológica, filtros por período, cliente, situação financeira e operacional
+  (agendado, em preparação, pronto para entrega, entregue, finalizado, cancelado); indicadores e próximos eventos.
+- Festas: alertas automáticos diários (3 dias, 2 dias e no dia — prazos configuráveis em Configurações), pagamentos
+  vencidos, produtos não conferidos e cadastros incompletos, sem duplicar.
+- Festas: planejamento de compras por período (consolidado por produto e litragem, litros, comprado × necessário),
+  checklist interativo (comprado, separado, conferido) e impressão da lista de compras e do checklist por evento.
+### Alterado
+- `receivables.customer_id` passa a aceitar nulo quando o título vem de uma festa (regra `receivables_owner_check`).
+- `receivables_view` aceita títulos sem cliente (colunas acrescentadas: `origin`, nome do cliente da festa).
+- `register_receipt`: recebimento de título de festa só pela tela Festas; histórico do CRM só quando há cliente.
+- Permissão `festas` na matriz única (`src/domain/permissions.ts`) e na migration 20261128003000.
+### Testes
+- `src/domain/festas.test.ts` (18 testes), `supabase/tests/30_festas.sql` (cadastro, confirmação, correção, estorno,
+  cancelamento, permissões, alertas idempotentes, planejamento), E2E de navegação incluindo o aviso sem servidor.
+
 ## [0.3.0] — 26/11/2026
 ### Adicionado
 - Boletos: tela de controle com código (nº doc./seu nº), busca, filtros por situação, PDF para anexar/baixar,

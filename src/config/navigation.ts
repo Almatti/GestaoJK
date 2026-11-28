@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Bell, Sparkles, Users, Store, PartyPopper, ClipboardList, Beer, Wrench, Handshake, Wallet, ArrowDownCircle,
   ArrowUpCircle, Barcode, QrCode, MessageCircle, Gavel, LineChart, ArrowLeftRight, Receipt, FileBarChart, Truck, PackageOpen,
   Boxes, Cpu, ClipboardCheck, CalendarDays, ListTodo, Repeat, Presentation, StickyNote, ShoppingCart, Megaphone, Target,
-  Gauge, Users2, Compass, Bot, UserCog, ShieldCheck, Zap, MessageSquareText, Plug, Settings, History, DatabaseBackup, Calculator, type LucideIcon
+  Gauge, Users2, Compass, Bot, UserCog, ShieldCheck, Zap, MessageSquareText, Plug, Settings, History, DatabaseBackup, Calculator, Music, ShoppingBasket, type LucideIcon
 } from 'lucide-react';
 import type { Resource } from '@/domain/permissions';
 
@@ -28,6 +28,7 @@ export const NAVIGATION: NavGroup[] = [
     { label: 'Pontos fixos', to: '/clientes?segment=ponto_fixo', icon: Store, resource: 'clientes' },
     { label: 'Eventos', to: '/pedidos?kind=evento', icon: PartyPopper, resource: 'pedidos' },
     { label: 'Pedidos', to: '/pedidos', icon: ClipboardList, resource: 'pedidos' },
+    { label: 'Festas', to: '/festas', icon: Music, resource: 'festas' },
     { label: 'Produtos', to: '/produtos', icon: Beer, resource: 'produtos' },
     { label: 'Serviços', to: '/servicos', icon: Wrench, resource: 'produtos' },
     { label: 'Condições comerciais', to: '/condicoes-comerciais', icon: Handshake, resource: 'clientes' },
@@ -52,6 +53,7 @@ export const NAVIGATION: NavGroup[] = [
     { label: 'Estoque', to: '/estoque', icon: Boxes, resource: 'estoque' },
     { label: 'Equipamentos', to: '/equipamentos', icon: Cpu, resource: 'equipamentos' },
     { label: 'Ordens de serviço', to: '/ordens-de-servico', icon: ClipboardCheck, resource: 'tecnico' },
+    { label: 'Compras de festas', to: '/festas/planejamento', icon: ShoppingBasket, resource: 'festas' },
     { label: 'Compras e fornecedores', to: '/compras', icon: ShoppingCart, resource: 'estoque' }
   ] },
   { label: 'Organização', items: [
