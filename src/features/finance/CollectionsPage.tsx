@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ExternalLink, Copy, Phone, Play } from 'lucide-react';
+import { ExternalLink, Copy, Phone, Play, Share2 } from 'lucide-react';
+import { sharePdfWithMessage } from '@/lib/shareBoleto';
 import { useList, db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -38,7 +39,11 @@ export function CollectionsPage() {
   };
   const recv = useList<Row>('receivables_view', { filters: [{ column: 'status', op: 'in', value: ['em_aberto', 'parcialmente_pago'] }], order: [{ column: 'due_date' }], range: [0, 4999] });
   const protests = useProtestMap();
-  const boletos = useList<Row>('boletos', { select: 'receivable_id,digitable_line,status', filters: [{ column: 'status', op: 'eq', value: 'registrado' }], range: [0, 4999] });
+  const boletos = useList<Row>('boletos', { select: 'id,receivable_id,digitable_line,status', filters: [{ column: 'status', op: 'eq', value: 'registrado' }], range: [0, 4999] });
+  const pdfs = useList<Row>('attachments', { select: 'entity_id,storage_path,file_name,created_at', filters: [{ column: 'entity_type', op: 'eq', value: 'boleto' }, { column: 'archived_at', op: 'is', value: null }], order: [{ column: 'created_at', ascending: false }], range: [0, 4999] });
+  // PDF mais recente de cada boleto (por id do boleto).
+  const pdfByBoleto = useMemo(() => new Map<string, { storage_path: string; file_name: string }>((pdfs.data?.rows ?? []).map((a) => [String(a.entity_id), { storage_path: String(a.storage_path), file_name: String(a.file_name ?? 'boleto.pdf') }])), [pdfs.data]);
+  const boletoByReceivable = useMemo(() => new Map((boletos.data?.rows ?? []).map((b) => [String(b.receivable_id), String(b.id)])), [boletos.data]);
   const settings = useList<Row>('settings', { range: [0, 499] });
   const holidays = useList<Row>('holidays', { select: 'day', range: [0, 1999] });
   const rules = useList<Row>('collection_rules', { range: [0, 499] });
@@ -59,8 +64,20 @@ export function CollectionsPage() {
     const nome = String(r.customer_trade_name ?? r.customer_name ?? '');
     const phone = String(r.customer_whatsapp ?? r.customer_phone ?? '');
     const values = { nome, empresa, valor: formatReais(outstanding / 100), valorAtualizado: formatReais(total / 100), vencimento: formatDateBR(String(r.due_date)), diasAtraso: ch.daysLate, linhaDigitavel: lineByReceivable.get(String(r.id)) || null };
-    return { r, stage, phone, total, daysLate: ch.daysLate, text: cobrancaMessage(stage, values), nome };
-  }).filter((x): x is NonNullable<typeof x> => x !== null), [recv.data, protests, today, dueSoon, holidaySet, lineByReceivable, empresa, rules.data]);
+    const boletoId = boletoByReceivable.get(String(r.id));
+    const pdf = boletoId ? pdfByBoleto.get(boletoId) ?? null : null;
+    return { r, stage, phone, total, daysLate: ch.daysLate, text: cobrancaMessage(stage, values), nome, pdf };
+  }).filter((x): x is NonNullable<typeof x> => x !== null), [recv.data, protests, today, dueSoon, holidaySet, lineByReceivable, empresa, rules.data, boletoByReceivable, pdfByBoleto]);
+
+  const sharePdf = async (x: (typeof items)[number]) => {
+    if (!x.pdf) return toast('Este boleto não tem PDF anexado.', 'warning');
+    try {
+      const r = await sharePdfWithMessage({ storagePath: x.pdf.storage_path, fileName: x.pdf.file_name, text: x.text, phone: x.phone });
+      if (r === 'downloaded') toast('PDF baixado. Anexe-o na conversa do WhatsApp que acabou de abrir.', 'warning');
+    } catch (e) {
+      toast(friendlyError(e), 'danger');
+    }
+  };
 
   const byStage = (s: CobrancaStage) => items.filter((x) => x.stage === s).sort((a, b) => String(a.r.due_date).localeCompare(String(b.r.due_date)));
   const counts: Record<string, number> = { vencido: byStage('vencido').length, a_vencer: byStage('a_vencer').length, cartorio: byStage('cartorio').length, protestado: byStage('protestado').length };
@@ -103,6 +120,7 @@ export function CollectionsPage() {
                 </p>
                 <p className="mt-2 whitespace-pre-wrap rounded-xl bg-cream-100 p-2 text-sm">{x.text}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" icon={<Share2 className="size-4" />} disabled={!x.pdf} title={!x.pdf ? 'Anexe o PDF do boleto para enviar' : undefined} onClick={() => sharePdf(x)}>Enviar PDF + cobrança</Button>
                   <Button size="sm" variant="secondary" icon={<Copy className="size-4" />} onClick={() => navigator.clipboard.writeText(x.text).then(() => toast('Mensagem copiada.'))}>Copiar</Button>
                   <Button size="sm" variant="secondary" icon={<ExternalLink className="size-4" />} disabled={!link} title={!link ? 'Cadastre o WhatsApp do cliente' : undefined} onClick={() => window.open(link!, '_blank', 'noopener')}>Abrir WhatsApp</Button>
                   {x.phone && <Button size="sm" variant="ghost" icon={<Phone className="size-4" />} onClick={() => window.open(`tel:${x.phone.replace(/\D/g, '')}`)}>Ligar</Button>}
