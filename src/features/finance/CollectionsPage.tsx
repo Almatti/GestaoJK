@@ -74,6 +74,7 @@ export function CollectionsPage() {
     try {
       const r = await sharePdfWithMessage({ storagePath: x.pdf.storage_path, fileName: x.pdf.file_name, text: x.text, phone: x.phone });
       if (r === 'downloaded') toast('PDF baixado. Anexe-o na conversa do WhatsApp que acabou de abrir.', 'warning');
+      if (r === 'shared') toast('Se a mensagem não vier junto com o PDF, cole-a na conversa: ela foi copiada.');
     } catch (e) {
       toast(friendlyError(e), 'danger');
     }

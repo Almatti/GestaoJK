@@ -8,13 +8,25 @@ import { whatsappLink } from '@/domain/messages';
 
 export type ShareResult = 'shared' | 'downloaded' | 'cancelled';
 
+/** Copia a mensagem para a área de transferência (alguns apps, como o WhatsApp, descartam o texto ao receber um arquivo). */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function sharePdfWithMessage(opts: { storagePath: string; fileName: string; text: string; phone?: string | null }): Promise<ShareResult> {
   const url = await db().storage.signedUrl(opts.storagePath, 300);
   const blob = await (await fetch(url)).blob();
   const file = new File([blob], opts.fileName, { type: 'application/pdf' });
 
   if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {
+    await copyText(opts.text);
     try {
+      // Com arquivo, o WhatsApp costuma ignorar o texto: a mensagem fica na área de transferência para colar.
       await navigator.share({ files: [file], text: opts.text, title: 'Cobrança' });
       return 'shared';
     } catch (e) {
