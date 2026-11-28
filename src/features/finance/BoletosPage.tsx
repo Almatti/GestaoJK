@@ -322,7 +322,7 @@ function BoletoDetail({ b, r, situation, onClose }: { b: Row; r?: Row; situation
           </div>
         )}
 
-        <Attachments entityType="boleto" entityId={String(b.id)} title="PDF do boleto e comprovantes" />
+        <Attachments entityType="boleto" entityId={String(b.id)} title="PDF do boleto e comprovantes" canRemove={can('cobranca', 'edit') || can('financeiro', 'edit')} />
       </div>
       {receipt && r && <ReceiptDialog receivable={r} open onClose={() => { setReceipt(false); invalidate(); }} />}
       {protestOpen && p && <ProtestDialog protest={p} receivable={r} onClose={() => setProtestOpen(false)} />}

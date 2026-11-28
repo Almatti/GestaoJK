@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Paperclip, Download, Upload } from 'lucide-react';
+import { Paperclip, Download, Upload, Trash2 } from 'lucide-react';
 import { useList, db, useInvalidateAll } from '@/data/hooks';
 import type { Row } from '@/data/types';
 import { Card } from './Layout';
@@ -12,7 +12,11 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED = /^(application\/pdf|image\/(png|jpe?g|webp|heic)|text\/plain|application\/(vnd\.openxmlformats|msword|vnd\.ms-excel)|.*\.(ofx|ret|rem))/;
 
 /** Anexos em bucket PRIVADO; download por URL temporária assinada (5 minutos). */
-export function Attachments({ entityType, entityId, title = 'Documentos e anexos' }: { entityType: string; entityId: string; title?: string }) {
+/**
+ * Anexos. "Remover" arquiva o anexo (não apaga): ele sai da lista e a ação fica registrada na auditoria.
+ * Só aparece quando `canRemove` for verdadeiro (quem pode editar o registro).
+ */
+export function Attachments({ entityType, entityId, title = 'Documentos e anexos', canRemove = false }: { entityType: string; entityId: string; title?: string; canRemove?: boolean }) {
   const q = useList<Row>('attachments', { filters: [{ column: 'entity_type', op: 'eq', value: entityType }, { column: 'entity_id', op: 'eq', value: entityId }, { column: 'archived_at', op: 'is', value: null }], order: [{ column: 'created_at', ascending: false }] });
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -37,6 +41,17 @@ export function Attachments({ entityType, entityId, title = 'Documentos e anexos
     setBusy(false);
   };
 
+  const remove = async (a: Row) => {
+    if (!confirm(`Remover o anexo "${String(a.file_name)}"? Ele sai da lista, mas fica registrado na auditoria.`)) return;
+    try {
+      await db().update('attachments', String(a.id), { archived_at: new Date().toISOString() });
+      invalidate();
+      toast('Anexo removido.');
+    } catch (e) {
+      toast(friendlyError(e), 'danger');
+    }
+  };
+
   const open = async (path: string) => {
     try {
       window.open(await db().storage.signedUrl(path, 300), '_blank', 'noopener');
@@ -54,6 +69,7 @@ export function Attachments({ entityType, entityId, title = 'Documentos e anexos
             <Paperclip className="size-4 text-cocoa-700" aria-hidden /><span className="min-w-0 flex-1 truncate">{String(a.file_name)}</span>
             <span className="hidden text-xs text-cocoa-700 sm:inline">{formatDateTimeBR(a.created_at as string)}</span>
             <Button size="sm" variant="ghost" icon={<Download className="size-4" />} onClick={() => open(String(a.storage_path))}>Abrir</Button>
+            {canRemove && <Button size="sm" variant="ghost" icon={<Trash2 className="size-4" />} onClick={() => remove(a)}>Remover</Button>}
           </li>))}</ul>
       )}
     </Card>
